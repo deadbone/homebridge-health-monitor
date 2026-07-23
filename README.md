@@ -1,6 +1,6 @@
 # Homebridge Health Monitor
 
-![Homebridge Health Monitor icon](assets/plugin-icon.svg)
+![Homebridge Health Monitor icon](assets/plugin-icon.png)
 
 Homebridge Health Monitor watches the configured Homebridge log file and exposes one HomeKit Leak Sensor named `Homebridge Health Monitor`.
 

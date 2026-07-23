@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 const requiredFiles = [
   'dist/index.js',
-  'assets/plugin-icon.svg',
+  'assets/plugin-icon.png',
   'config.schema.json',
   'README.md',
   'CHANGELOG.md',
