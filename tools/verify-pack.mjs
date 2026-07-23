@@ -27,7 +27,8 @@ if (packs.error) {
   console.error(packs.error.summary ?? 'npm pack failed.');
   process.exit(1);
 }
-const files = new Set(packs[0]?.files?.map((file) => file.path.replace(/^package\//, '')));
+const pack = Array.isArray(packs) ? packs[0] : packs;
+const files = new Set(pack?.files?.map((file) => file.path.replace(/^package\//, '')));
 const missing = requiredFiles.filter((file) => !files.has(file));
 
 if (missing.length > 0) {

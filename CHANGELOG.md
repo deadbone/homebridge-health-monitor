@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.6
+
+- Fixed package verification compatibility with npm versions that return a single dry-run package object instead of an array.
+
 ## 0.1.0-alpha.5
 
 - Fixed package verification compatibility with npm versions that prefix dry-run package file paths.
