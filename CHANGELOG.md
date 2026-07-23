@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+- Fixed package verification compatibility with npm versions that prefix dry-run package file paths.
+
 ## 0.1.0-alpha.4
 
 - Added focused test coverage for configuration validation, log tailing, anomaly history, HomeKit accessory updates, platform config failure handling, and health monitor polling/reset behavior.
