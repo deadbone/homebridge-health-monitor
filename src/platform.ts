@@ -12,9 +12,9 @@ const ACCESSORY_ROLE = 'health-leak-sensor';
 
 export class HealthMonitorPlatform implements DynamicPlatformPlugin {
   public readonly accessories = new Map<string, PlatformAccessory>();
-  public readonly configData: NormalizedPlatformConfig;
+  public readonly configData: NormalizedPlatformConfig | undefined;
   private sensor: HealthLeakSensorAccessory | undefined;
-  private readonly monitor: HealthMonitor;
+  private readonly monitor: HealthMonitor | undefined;
 
   public constructor(
     public readonly log: Logging,
@@ -27,8 +27,11 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     } catch (error) {
       if (error instanceof ConfigValidationError) {
         log.error(error.message);
+      } else {
+        log.error('Health Monitor configuration could not be loaded: %s', errorMessage(error));
       }
-      throw error;
+      log.warn('Health Monitor is disabled until its configuration is corrected.');
+      return;
     }
 
     const history = new HistoryStore(join(storagePath, HISTORY_FILE_NAME), log);
@@ -38,11 +41,14 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     });
 
     this.api.on('didFinishLaunching', () => {
+      if (!this.monitor) {
+        return;
+      }
       this.registerConfiguredAccessories();
       this.monitor.start();
     });
     this.api.on('shutdown', () => {
-      this.monitor.stop();
+      this.monitor?.stop();
     });
   }
 
@@ -81,4 +87,8 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     this.sensor = new HealthLeakSensorAccessory(this, accessory, ACCESSORY_DISPLAY_NAME);
     return accessory;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
