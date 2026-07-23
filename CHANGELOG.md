@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+- Added focused test coverage for configuration validation, log tailing, anomaly history, HomeKit accessory updates, platform config failure handling, and health monitor polling/reset behavior.
+- Added global coverage thresholds to prevent test coverage regressions.
+
 ## 0.1.0
 
 - Initial Homebridge Health Monitor implementation.
