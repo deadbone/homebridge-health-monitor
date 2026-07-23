@@ -46,7 +46,7 @@
     "verify:pack": "node tools/verify-pack.mjs",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run lint && npm test"
+    "prepublishOnly": "npm run lint && npm run build && npm test && npm run verify:pack"
   },
   "dependencies": {},
   "devDependencies": {

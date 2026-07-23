@@ -160,9 +160,18 @@ npm run verify:pack
 
 Do not publish to npm, create stable tags, or create GitHub Releases without explicit maintainer authorization.
 
+GitHub Actions are provided for the release workflow:
+
+- `CI`: runs lint, build, tests, and package verification on push and pull request.
+- `Publish to npm`: publishes PR beta versions with the `beta` dist-tag for pull requests from this repository.
+- `Publish to npm`: publishes alpha tag versions with the `alpha` dist-tag when a matching `v*-alpha.*` tag is pushed.
+- `Publish to npm`: publishes stable versions through npm Trusted Publishing when a matching stable `v*` tag is pushed or when the workflow is manually dispatched.
+
+Before creating an alpha or stable tag, make sure `package.json` already contains the exact target version. The tag must match the package version.
+
 ## Beta Versions
 
-If beta releases are added later, they must use the `beta` npm dist-tag and must never replace `latest`.
+Pull request beta releases use the `beta` npm dist-tag and must never replace `latest`.
 
 ## Future Homebridge Verification
 
@@ -330,9 +339,18 @@ npm run verify:pack
 
 Ne pas publier sur npm, créer de tag stable ou créer de GitHub Release sans autorisation explicite du mainteneur.
 
+Des workflows GitHub Actions sont fournis pour la publication :
+
+- `CI` : lance le lint, le build, les tests et la vérification du paquet sur push et pull request.
+- `Publish to npm` : publie des versions bêta de PR avec le dist-tag `beta` pour les pull requests venant de ce dépôt.
+- `Publish to npm` : publie les versions alpha taguées avec le dist-tag `alpha` lorsqu'un tag `v*-alpha.*` correspondant est poussé.
+- `Publish to npm` : publie les versions stables via npm Trusted Publishing lorsqu'un tag stable `v*` correspondant est poussé ou lorsque le workflow est déclenché manuellement.
+
+Avant de créer un tag alpha ou stable, vérifiez que `package.json` contient déjà exactement la version cible. Le tag doit correspondre à la version du paquet.
+
 ## Versions bêta
 
-Si des versions bêta sont ajoutées plus tard, elles doivent utiliser le dist-tag npm `beta` et ne doivent jamais remplacer `latest`.
+Les versions bêta de pull request utilisent le dist-tag npm `beta` et ne doivent jamais remplacer `latest`.
 
 ## Future vérification Homebridge
 

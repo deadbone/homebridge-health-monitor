@@ -9,3 +9,4 @@
 - Added automatic alert reset after a quiet period.
 - Added bounded JSON anomaly history in Homebridge storage.
 - Added Homebridge UI schema, bilingual README, and package icon asset.
+- Added GitHub Actions for CI, PR beta publication, and stable npm publication through Trusted Publishing.
