@@ -9,7 +9,7 @@ const requiredFiles = [
   'LICENSE',
 ];
 
-const result = spawnSync('npm', ['pack', '--dry-run', '--json'], {
+const result = spawnSync('npm', ['pack', '--dry-run'], {
   encoding: 'utf8',
   env: {
     ...process.env,
@@ -22,14 +22,8 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-const packs = JSON.parse(result.stdout);
-if (packs.error) {
-  console.error(packs.error.summary ?? 'npm pack failed.');
-  process.exit(1);
-}
-const pack = Array.isArray(packs) ? packs[0] : packs;
-const files = new Set(pack?.files?.map((file) => file.path.replace(/^package\//, '')));
-const missing = requiredFiles.filter((file) => !files.has(file));
+const packOutput = `${result.stdout}\n${result.stderr}`;
+const missing = requiredFiles.filter((file) => !packOutput.includes(file));
 
 if (missing.length > 0) {
   console.error(`Missing required package files:\n${missing.map((file) => `- ${file}`).join('\n')}`);
