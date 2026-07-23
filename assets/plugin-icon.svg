@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Homebridge Health Monitor icon">
+  <defs>
+    <linearGradient id="background" x1="80" y1="48" x2="432" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b2a5b"/>
+      <stop offset="1" stop-color="#41b8f5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="64" fill="url(#background)"/>
+  <path
+    fill="#ffffff"
+    d="M256 72 376 116v114c0 98-58 164-120 198-62-34-120-100-120-198V116l120-44Zm0 48-76 28v82c0 68 34 116 76 144 42-28 76-76 76-144v-82l-76-28Z"
+  />
+  <path
+    fill="none"
+    stroke="#ffffff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="28"
+    d="M146 270h58l24-52 42 104 36-82 22 30h38"
+  />
+</svg>

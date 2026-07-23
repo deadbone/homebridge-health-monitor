@@ -1,0 +1,69 @@
+{
+  "pluginAlias": "HealthMonitor",
+  "pluginType": "platform",
+  "singular": true,
+  "strictValidation": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "platform": {
+        "type": "string",
+        "default": "HealthMonitor"
+      },
+      "name": {
+        "title": "Platform Name",
+        "type": "string",
+        "default": "Homebridge Health Monitor"
+      },
+      "logFile": {
+        "title": "Homebridge Log File",
+        "type": "string",
+        "description": "Absolute path to the Homebridge log file. If omitted, the plugin uses homebridge.log in the Homebridge storage directory."
+      },
+      "errorThreshold": {
+        "title": "Anomaly Threshold",
+        "type": "integer",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 10000,
+        "description": "Number of counted anomalies inside the analysis window required to trigger the Leak Sensor."
+      },
+      "analysisWindowSeconds": {
+        "title": "Analysis Window",
+        "type": "integer",
+        "default": 300,
+        "minimum": 10,
+        "maximum": 86400,
+        "description": "Rolling time window, in seconds, used to count anomalies."
+      },
+      "resetAfterSeconds": {
+        "title": "Automatic Reset Delay",
+        "type": "integer",
+        "default": 600,
+        "minimum": 10,
+        "maximum": 86400,
+        "description": "Number of seconds without a new anomaly before the Leak Sensor returns to normal."
+      },
+      "monitorWarnings": {
+        "title": "Monitor WARN Lines",
+        "type": "boolean",
+        "default": false,
+        "description": "When enabled, WARN lines count as anomalies together with ERROR lines."
+      },
+      "scanIntervalSeconds": {
+        "title": "Scan Interval",
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 3600,
+        "description": "How often the plugin reads new lines appended to the log file."
+      },
+      "debug": {
+        "title": "Debug Logging",
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}
