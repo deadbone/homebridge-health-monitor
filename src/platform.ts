@@ -21,7 +21,11 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    const storagePath = api.user.storagePath();
+    const storagePath = this.resolveStoragePath();
+    if (!storagePath) {
+      return;
+    }
+
     try {
       this.configData = normalizeConfig(config, storagePath);
     } catch (error) {
@@ -44,8 +48,13 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
       if (!this.monitor) {
         return;
       }
-      this.registerConfiguredAccessories();
-      this.monitor.start();
+      try {
+        this.registerConfiguredAccessories();
+        this.monitor.start();
+      } catch (error) {
+        this.log.error('Health Monitor failed to start: %s', errorMessage(error));
+        this.monitor.stop();
+      }
     });
     this.api.on('shutdown', () => {
       this.monitor?.stop();
@@ -67,6 +76,16 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
         this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.delete(uuid);
       }
+    }
+  }
+
+  private resolveStoragePath(): string | undefined {
+    try {
+      return this.api.user.storagePath();
+    } catch (error) {
+      this.log.error('Health Monitor could not resolve the Homebridge storage path: %s', errorMessage(error));
+      this.log.warn('Health Monitor is disabled until Homebridge exposes a usable storage path.');
+      return undefined;
     }
   }
 

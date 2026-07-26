@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Guard Homebridge storage path resolution and platform startup so container restarts cannot loop because of a plugin startup exception.
+
 ## 0.1.0-alpha.7
 
 - Made package verification independent of npm dry-run JSON output differences.
