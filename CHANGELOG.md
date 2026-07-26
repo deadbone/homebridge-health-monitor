@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.8
 
 - Guard Homebridge storage path resolution and platform startup so container restarts cannot loop because of a plugin startup exception.
 
