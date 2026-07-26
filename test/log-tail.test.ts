@@ -46,4 +46,19 @@ describe('LogTail', () => {
 
     await tail.close();
   });
+
+  it('opens lazily when reading before explicit open and ignores partial lines until complete', async () => {
+    const path = await makeLogFile('initial\n');
+    const tail = new LogTail(path);
+
+    expect(await tail.readNewLines()).toEqual([]);
+
+    await writeFile(path, 'initial\npartial', 'utf8');
+    expect(await tail.readNewLines()).toEqual([]);
+
+    await writeFile(path, 'initial\npartial done\n', 'utf8');
+    expect(await tail.readNewLines()).toEqual(['partial done']);
+
+    await tail.close();
+  });
 });

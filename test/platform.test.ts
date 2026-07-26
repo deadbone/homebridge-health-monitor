@@ -1,4 +1,4 @@
-import type { API, Logging, PlatformConfig } from 'homebridge';
+import type { API, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 import { describe, expect, it, vi } from 'vitest';
 import { HealthMonitorPlatform } from '../src/platform.js';
 
@@ -75,5 +75,73 @@ describe('HealthMonitorPlatform', () => {
 
     expect(() => handlers.get('didFinishLaunching')?.()).not.toThrow();
     expect(log.error).toHaveBeenCalledWith('Health Monitor failed to start: %s', 'hap unavailable');
+  });
+
+  it('updates the expected cached accessory and removes stale cached accessories', () => {
+    const log = makeLog();
+    const handlers = new Map<string, () => void>();
+    const infoService = {
+      setCharacteristic: vi.fn().mockReturnThis(),
+    };
+    const leakService = {
+      setCharacteristic: vi.fn().mockReturnThis(),
+      updateCharacteristic: vi.fn().mockReturnThis(),
+    };
+    const staleAccessory = {
+      UUID: 'stale',
+      displayName: 'Stale Health Monitor',
+    } as PlatformAccessory;
+    const expectedAccessory = {
+      UUID: 'expected',
+      displayName: 'Cached Health Monitor',
+      context: {},
+      getService: vi.fn((service: Service) => (service === 'AccessoryInformation' ? infoService : leakService)),
+      addService: vi.fn(() => leakService),
+    } as unknown as PlatformAccessory;
+    const api = {
+      user: {
+        storagePath: () => '/tmp/homebridge',
+      },
+      on: vi.fn((event: string, handler: () => void) => {
+        handlers.set(event, handler);
+      }),
+      hap: {
+        uuid: {
+          generate: () => 'expected',
+        },
+        Characteristic: {
+          Manufacturer: 'Manufacturer',
+          Model: 'Model',
+          SerialNumber: 'SerialNumber',
+          Name: 'Name',
+          LeakDetected: {
+            LEAK_DETECTED: 1,
+            LEAK_NOT_DETECTED: 0,
+          },
+          StatusFault: {
+            GENERAL_FAULT: 1,
+            NO_FAULT: 0,
+          },
+        },
+        Service: {
+          AccessoryInformation: 'AccessoryInformation',
+          LeakSensor: 'LeakSensor',
+        },
+      },
+      platformAccessory: vi.fn(),
+      registerPlatformAccessories: vi.fn(),
+      updatePlatformAccessories: vi.fn(),
+      unregisterPlatformAccessories: vi.fn(),
+    } as unknown as API;
+    const platform = new HealthMonitorPlatform(log, { platform: 'HealthMonitor' }, api);
+
+    platform.configureAccessory(expectedAccessory);
+    platform.configureAccessory(staleAccessory);
+
+    handlers.get('didFinishLaunching')?.();
+
+    expect(api.updatePlatformAccessories).toHaveBeenCalledWith([expectedAccessory]);
+    expect(api.unregisterPlatformAccessories).toHaveBeenCalledWith('homebridge-health-monitor', 'HealthMonitor', [staleAccessory]);
+    expect(api.registerPlatformAccessories).not.toHaveBeenCalled();
   });
 });

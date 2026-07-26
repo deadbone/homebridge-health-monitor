@@ -91,4 +91,38 @@ describe('HealthMonitor', () => {
 
     monitor.stop();
   });
+
+  it('does not continue startup when stopped while initial history loading is pending', async () => {
+    const dir = await makeTempDir();
+    const logFile = join(dir, 'homebridge.log');
+    await writeFile(logFile, '', 'utf8');
+    const log = makeLog();
+    let resolveLoad: (() => void) | undefined;
+    const load = vi.fn(
+      () =>
+        new Promise<readonly []>((resolve) => {
+          resolveLoad = () => {
+            resolve([]);
+          };
+        }),
+    );
+    const add = vi.fn();
+    const history = {
+      load,
+      add,
+    } as unknown as HistoryStore;
+    const monitor = new HealthMonitor(makeConfig(logFile), log, history);
+
+    monitor.start();
+    monitor.stop();
+    resolveLoad?.();
+
+    await vi.waitFor(() => {
+      expect(load).toHaveBeenCalledOnce();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(log.info).not.toHaveBeenCalledWith('Health Monitor started watching %s', logFile);
+    expect(add).not.toHaveBeenCalled();
+  });
 });

@@ -57,6 +57,10 @@ export class HealthMonitor {
     try {
       await this.history.load();
       await this.tail.openAtEnd();
+      if (!this.isRunning()) {
+        await this.tail.close();
+        return;
+      }
       this.log.info('Health Monitor started watching %s', this.config.logFile);
     } catch (error) {
       this.running = false;
@@ -66,7 +70,7 @@ export class HealthMonitor {
     }
 
     await this.poll();
-    if (!this.running) {
+    if (!this.isRunning()) {
       return;
     }
     this.pollTimer = setInterval(() => {
@@ -120,6 +124,10 @@ export class HealthMonitor {
     }
     clearTimeout(this.resetTimer);
     this.resetTimer = undefined;
+  }
+
+  private isRunning(): boolean {
+    return this.running;
   }
 
   private emit(snapshot = this.analyzer.snapshot()): void {

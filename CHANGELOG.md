@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-beta.1
+
+- Stop asynchronous monitor startup cleanly when shutdown happens during initialization.
+- Close the log file handle if startup is cancelled after opening the log file.
+- Add tests for entrypoint registration, cached accessory cleanup, history parsing, lazy log tail reads, and stopped-during-startup behavior.
+- Raise test coverage above 90%.
+
 ## 0.1.0-alpha.8
 
 - Guard Homebridge storage path resolution and platform startup so container restarts cannot loop because of a plugin startup exception.

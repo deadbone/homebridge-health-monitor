@@ -69,4 +69,50 @@ describe('HistoryStore', () => {
     await expect(store.load()).resolves.toEqual([]);
     expect(log.warn).toHaveBeenCalledOnce();
   });
+
+  it('loads valid history entries and filters malformed records', async () => {
+    const path = join(await makeTempDir(), 'history.json');
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        anomalies: [
+          {
+            timestamp: '2026-07-26T10:00:00.000Z',
+            severity: 'warning',
+            pluginName: undefined,
+            message: 'valid warning',
+          },
+          {
+            timestamp: '2026-07-26T10:00:01.000Z',
+            severity: 'info',
+            message: 'invalid severity',
+          },
+          {
+            timestamp: '2026-07-26T10:00:02.000Z',
+            severity: 'error',
+            pluginName: 'homebridge-test',
+            message: 'valid error',
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const store = new HistoryStore(path, makeLog());
+
+    await expect(store.load()).resolves.toEqual([
+      {
+        timestamp: '2026-07-26T10:00:00.000Z',
+        severity: 'warning',
+        message: 'valid warning',
+      },
+      {
+        timestamp: '2026-07-26T10:00:02.000Z',
+        severity: 'error',
+        pluginName: 'homebridge-test',
+        message: 'valid error',
+      },
+    ]);
+  });
 });
