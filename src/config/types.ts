@@ -7,4 +7,11 @@ export interface NormalizedPlatformConfig {
   readonly errorThreshold: number;
   readonly monitorWarnings: boolean;
   readonly debug: boolean;
+  readonly groupRepeatedErrors: boolean;
+  readonly repeatWindowSeconds: number;
+  readonly pluginErrorThreshold: number;
+  readonly reconnectIntervalSeconds: number;
+  readonly historyLimit: number;
+  readonly separateWarningSensor: boolean;
+  readonly warningThreshold: number;
 }

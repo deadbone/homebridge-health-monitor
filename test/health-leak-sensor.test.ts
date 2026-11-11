@@ -1,60 +1,30 @@
-import type { API, PlatformAccessory, Service } from 'homebridge';
-import { describe, expect, it, vi } from 'vitest';
+import * as hap from '@homebridge/hap-nodejs';
+import type { PlatformAccessory } from 'homebridge';
+import { describe, expect, it } from 'vitest';
 import { HealthLeakSensorAccessory } from '../src/accessories/health-leak-sensor.js';
 import type { HealthMonitorPlatform } from '../src/platform.js';
 
-describe('HealthLeakSensorAccessory', () => {
-  it('sets accessory information and updates leak/fault state', () => {
-    const infoService = {
-      setCharacteristic: vi.fn().mockReturnThis(),
-    };
-    const leakService = {
-      setCharacteristic: vi.fn().mockReturnThis(),
-      updateCharacteristic: vi.fn().mockReturnThis(),
-    };
-    const addService = vi.fn(() => leakService);
-    const ServiceType = {
-      AccessoryInformation: 'AccessoryInformation',
-      LeakSensor: 'LeakSensor',
-    };
-    const Characteristic = {
-      Manufacturer: 'Manufacturer',
-      Model: 'Model',
-      SerialNumber: 'SerialNumber',
-      Name: 'Name',
-      LeakDetected: {
-        LEAK_DETECTED: 1,
-        LEAK_NOT_DETECTED: 0,
-      },
-      StatusFault: {
-        GENERAL_FAULT: 1,
-        NO_FAULT: 0,
-      },
-    };
-    const accessory = {
-      getService: vi.fn((service: Service) => (service === ServiceType.AccessoryInformation ? infoService : undefined)),
-      addService,
-    } as unknown as PlatformAccessory;
-    const platform = {
-      api: {
-        hap: {
-          Characteristic,
-          Service: ServiceType,
-        },
-      } as unknown as API,
-    } as HealthMonitorPlatform;
-
+describe('HealthLeakSensorAccessory with real HAP services', () => {
+  it('exposes only boolean/enumerated status, with fault independent of anomaly alert', () => {
+    const accessory = new hap.Accessory('Health', hap.uuid.generate('health-test')) as unknown as PlatformAccessory;
+    const platform = { api: { hap } } as unknown as HealthMonitorPlatform;
     const sensor = new HealthLeakSensorAccessory(platform, accessory, 'Health');
-    sensor.update(true);
-
-    expect(infoService.setCharacteristic).toHaveBeenCalledWith('Manufacturer', 'Thierry Lubrez');
-    expect(infoService.setCharacteristic).toHaveBeenCalledWith('Model', 'Homebridge Health Monitor');
-    expect(infoService.setCharacteristic).toHaveBeenCalledWith('SerialNumber', 'health-leak-sensor');
-    expect(addService).toHaveBeenCalledWith(ServiceType.LeakSensor, 'Health');
-    expect(leakService.setCharacteristic).toHaveBeenCalledWith('Name', 'Health');
-    expect(leakService.updateCharacteristic).toHaveBeenCalledWith(Characteristic.LeakDetected, 0);
-    expect(leakService.updateCharacteristic).toHaveBeenCalledWith(Characteristic.StatusFault, 0);
-    expect(leakService.updateCharacteristic).toHaveBeenCalledWith(Characteristic.LeakDetected, 1);
-    expect(leakService.updateCharacteristic).toHaveBeenCalledWith(Characteristic.StatusFault, 1);
+    const service = accessory.getService(hap.Service.LeakSensor);
+    expect(service).toBeDefined();
+    const value = (characteristic: typeof hap.Characteristic.LeakDetected | typeof hap.Characteristic.StatusActive | typeof hap.Characteristic.StatusFault) => service?.getCharacteristic(characteristic).value;
+    expect(value(hap.Characteristic.StatusActive)).toBe(false);
+    expect(value(hap.Characteristic.StatusFault)).toBe(1);
+    sensor.update(true, 'OPERATIONAL');
+    expect(value(hap.Characteristic.LeakDetected)).toBe(1);
+    expect(value(hap.Characteristic.StatusFault)).toBe(0);
+    expect(value(hap.Characteristic.StatusActive)).toBe(true);
+    sensor.update(true, 'UNAVAILABLE');
+    expect(value(hap.Characteristic.LeakDetected)).toBe(1);
+    expect(value(hap.Characteristic.StatusFault)).toBe(1);
+    expect(value(hap.Characteristic.StatusActive)).toBe(false);
+    sensor.update(false, 'DISABLED');
+    expect(value(hap.Characteristic.LeakDetected)).toBe(0);
+    expect(value(hap.Characteristic.StatusActive)).toBe(false);
+    expect(value(hap.Characteristic.StatusFault)).toBe(0);
   });
 });

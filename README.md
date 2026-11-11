@@ -59,7 +59,14 @@ npm run build
   "resetAfterSeconds": 600,
   "monitorWarnings": false,
   "scanIntervalSeconds": 5,
-  "debug": false
+  "debug": false,
+  "groupRepeatedErrors": true,
+  "repeatWindowSeconds": 120,
+  "pluginErrorThreshold": 15,
+  "reconnectIntervalSeconds": 10,
+  "historyLimit": 50,
+  "separateWarningSensor": false,
+  "warningThreshold": 5
 }
 ```
 
@@ -67,7 +74,7 @@ If `logFile` is omitted, the plugin uses `homebridge.log` in the Homebridge stor
 
 ## HomeKit Accessory
 
-The plugin creates one Leak Sensor:
+By default, the plugin creates one Leak Sensor:
 
 - no anomaly alert: leak = no;
 - anomaly alert active: leak = yes.
@@ -88,7 +95,7 @@ The plugin does not use:
 - system logs;
 - external log services.
 
-If the log file does not exist or cannot be opened, the plugin logs a clear warning, keeps the Leak Sensor normal, and disables monitoring cleanly.
+If the log file cannot be read, monitoring becomes unavailable and retries automatically. Existing anomaly alerts remain latched during the outage; StatusActive becomes false and StatusFault reports a fault. Recovery is automatic.
 
 ## Detection Rules
 
@@ -108,7 +115,7 @@ When a Homebridge prefix is available, the plugin stores the source plugin in th
 
 Every counted anomaly refreshes the reset timer.
 
-When `resetAfterSeconds` passes without a new anomaly, the Leak Sensor returns to normal. This reset timer is independent from the rolling analysis window.
+When `resetAfterSeconds` passes without a new anomaly, the Leak Sensor returns to normal. The quiet delay is independent from the rolling analysis window. A successful read confirms the reset; no reset occurs during an outage. Reset clears the corresponding in-memory anomaly evidence so an old burst cannot reactivate the alert.
 
 ## Persistent Anomaly History
 
@@ -124,7 +131,40 @@ The file is stored in the Homebridge storage directory. It is diagnostic data on
 
 On startup, the plugin starts reading from the end of the configured log file. It does not analyze old lines that were already present.
 
-The Leak Sensor starts normal after restart and reacts only to new anomalies.
+The Leak Sensor alert starts inactive after restart and reacts only to new anomalies. Monitoring initially reports reconnecting, then operational or unavailable. The history is not replayed into alerts.
+
+## Diagnostics and optional warning sensor
+
+An **error detected** is one new line with an explicit ERROR level or a native Homebridge red message. A **repeated error** is the same trimmed message from the same identified source within `repeatWindowSeconds`; numbers, device IDs and embedded values are not generalized. A **monitoring outage** means the reader cannot observe the file; it is not proof of an error in another plugin and is not a healthy state.
+
+Structured prefix levels `[ERROR]`, `[WARN]`, `[WARNING]`, `ERROR:` and `WARN:` take priority over message words and ANSI colors. Native Homebridge red/yellow message wrappers are recognized. INFO/DEBUG messages mentioning “error” are ignored. Source names are labels from leading log prefixes, not verified npm package identities. Ambiguous/missing sources are `unknown`; they are never assigned to another plugin or grouped as a known source. Custom platform prefixes are excluded to prevent feedback loops.
+
+Local diagnostics contain per-source error/warning counts, last observed error, last occurrence, maximum identical-error count, and HEALTHY/WARNING/CRITICAL/UNKNOWN. HEALTHY only means no anomaly was observed recently; it does not prove that the plugin works. UNKNOWN applies to unavailable monitoring and unidentified sources. Warnings remain in local diagnostics/history even when `monitorWarnings` is false. The diagnostics are internal snapshots, not a new web endpoint or an accessory per plugin.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `groupRepeatedErrors` | `true` | Group identical errors from one identified source |
+| `repeatWindowSeconds` | `120` | Repetition window, 10–86400 seconds |
+| `pluginErrorThreshold` | `15` | Critical error count per source in the analysis window, or identical-error count in the repetition window; 1–10000 |
+| `reconnectIntervalSeconds` | `10` | Retry delay during outages, 1–3600 seconds |
+| `historyLimit` | `50` | Maximum history records, 1–1000 |
+| `separateWarningSensor` | `false` | Optional second Leak Sensor for warnings |
+| `warningThreshold` | `5` | Separate warning threshold in the analysis window, 1–10000 |
+
+With `separateWarningSensor: false`, existing `errorThreshold`/`monitorWarnings` behavior is retained. With `true`, the original sensor counts errors only and **Homebridge Health Warnings** counts WARN/WARNING independently of `monitorWarnings`. Each alert has its own quiet period using `resetAfterSeconds`. The original sensor UUID is unchanged. Disabling the option removes only the optional warning accessory; any automations targeting that accessory must then be recreated if it is enabled again.
+
+`StatusActive` reports whether monitoring is operational. `StatusFault` reports unavailable/reconnecting monitoring, independently of `LeakDetected`. Disabled monitoring has StatusActive=false without claiming a reader fault. The four detailed monitoring states stay in internal diagnostics; Apple Home may not display optional characteristics consistently. No log message or source name is sent to HomeKit.
+
+History schema version 1 remains readable, including older records without occurrence fields. Records contain observation time, severity, source, a limited/redacted message, count, first and last occurrence. Repeated groups are updated while their first occurrence remains within the rolling window; after it expires, a new record can overlap earlier grouped observations. Do not sum grouped history counts as a lifetime total. Writes are serialized, use a private temporary file and atomic rename, and corrupted/oversized history is recovered with a warning. A history write failure does not stop detection. Common credentials, URLs and emails are redacted; arbitrary log text cannot be guaranteed free of secrets. History stays local, with owner-only file permissions and messages limited to 500 characters.
+
+## Monitoring limits
+
+- **The plugin cannot detect the complete shutdown/crash of its own Homebridge process.** It stops with that process. Apple Home may show an unreachable bridge, but no new plugin alert can be emitted.
+- Logs that lose both ANSI severity colors and explicit level fields cannot be classified reliably. Unmarked messages and multiline continuations are not guessed to be errors.
+- Initial startup ignores existing lines and incomplete preexisting lines. Rotation drains the old descriptor, then reads the replacement from the beginning on the next cycle. Temporary disappearance preserves the old descriptor for recovery.
+- In-place truncation is detected when the size falls below the read offset. A truncate-and-regrow operation between polls on the same inode, multiple rapid rotations, or late writes to an already drained rotated file can lose observations. No polling reader can reconstruct overwritten bytes.
+- Processing is bounded to 1 MiB per cycle, 64 Ki characters per line (oversized lines are discarded), 10000 recent events and 256 identified source labels. Excess source labels become unknown. A burst exceeding these bounds can delay or undercount diagnostics. History files above 8 MiB are discarded with a warning.
+- Windows use observation time, not timestamps parsed from logs. A restart starts fresh alert windows; local history remains diagnostic only.
 
 ## Troubleshooting
 
@@ -239,7 +279,14 @@ npm run build
   "resetAfterSeconds": 600,
   "monitorWarnings": false,
   "scanIntervalSeconds": 5,
-  "debug": false
+  "debug": false,
+  "groupRepeatedErrors": true,
+  "repeatWindowSeconds": 120,
+  "pluginErrorThreshold": 15,
+  "reconnectIntervalSeconds": 10,
+  "historyLimit": 50,
+  "separateWarningSensor": false,
+  "warningThreshold": 5
 }
 ```
 
@@ -247,7 +294,7 @@ Si `logFile` est omis, le plugin utilise `homebridge.log` dans le répertoire de
 
 ## Accessoire HomeKit
 
-Le plugin crée un seul capteur de fuite :
+Par défaut, le plugin crée un seul capteur de fuite :
 
 - aucune alerte : fuite = non ;
 - alerte active : fuite = oui.
@@ -268,7 +315,7 @@ Le plugin n'utilise pas :
 - les logs système ;
 - les services de logs externes.
 
-Si le fichier de log n'existe pas ou ne peut pas être ouvert, le plugin journalise un avertissement clair, garde le capteur à l'état normal et désactive proprement la surveillance.
+Si le fichier est illisible, la surveillance devient indisponible et tente automatiquement une reconnexion. Les alertes existantes sont conservées pendant la panne ; StatusActive passe à faux et StatusFault signale un défaut. La reprise est automatique.
 
 ## Règles de détection
 
@@ -288,7 +335,7 @@ Quand un préfixe Homebridge est disponible, le plugin stocke le plugin source d
 
 Chaque anomalie comptée rafraîchit le timer de réinitialisation.
 
-Lorsque `resetAfterSeconds` s'écoule sans nouvelle anomalie, le capteur revient à l'état normal. Ce timer est indépendant de la fenêtre d'analyse.
+Lorsque `resetAfterSeconds` s'écoule sans nouvelle anomalie, le capteur revient à l'état normal. Ce délai est indépendant de la fenêtre d’analyse. Une lecture réussie confirme la réinitialisation ; aucune réinitialisation n’a lieu pendant une panne de lecture. Les anomalies correspondantes en mémoire sont effacées pour éviter la réactivation par une ancienne rafale.
 
 ## Historique persistant des anomalies
 
@@ -304,7 +351,40 @@ Le fichier est stocké dans le répertoire de stockage Homebridge. Il s'agit uni
 
 Au démarrage, le plugin commence la lecture à la fin du fichier de log configuré. Il n'analyse pas les anciennes lignes déjà présentes.
 
-Le capteur démarre à l'état normal après redémarrage et réagit uniquement aux nouvelles anomalies.
+L’alerte du capteur est inactive au redémarrage et ne réagit qu’aux nouvelles anomalies. La surveillance démarre en reconnexion, puis devient opérationnelle ou indisponible. L’historique ne réactive pas les alertes.
+
+## Diagnostic et capteur d’avertissements optionnel
+
+Une **erreur détectée** est une nouvelle ligne de niveau ERROR explicite ou un message natif Homebridge rouge. Une **erreur répétitive** est le même message, après retrait des espaces aux extrémités, émis par une même source identifiée dans `repeatWindowSeconds`. Les nombres et identifiants restent distincts. Une **perte de surveillance** signifie que le fichier ne peut plus être observé : elle ne prouve ni une panne d’un autre plugin ni son bon fonctionnement.
+
+Les niveaux en préfixe `[ERROR]`, `[WARN]`, `[WARNING]`, `ERROR:` et `WARN:` sont prioritaires sur les mots du message et les couleurs ANSI. Les messages natifs rouges/jaunes sont reconnus. Un message INFO/DEBUG contenant « error » est ignoré. La source est le libellé du préfixe, pas une identité npm vérifiée. Une source absente ou ambiguë devient `unknown` ; elle n’est pas attribuée arbitrairement ni regroupée avec une source connue. Le préfixe personnalisé du moniteur est exclu pour éviter les boucles.
+
+Les diagnostics internes conservent, par source, les compteurs d’erreurs et d’avertissements, la dernière erreur observée, la dernière occurrence, le maximum d’erreurs identiques et l’état HEALTHY/WARNING/CRITICAL/UNKNOWN. HEALTHY signifie uniquement qu’aucune anomalie récente n’a été observée. UNKNOWN correspond à une surveillance indisponible ou une source inconnue. Les avertissements restent dans les diagnostics et l’historique même si `monitorWarnings` est faux. Aucun endpoint web ni accessoire par plugin n’est créé.
+
+| Paramètre | Défaut | Signification |
+| --- | --- | --- |
+| `groupRepeatedErrors` | `true` | Regrouper les erreurs identiques d’une source identifiée |
+| `repeatWindowSeconds` | `120` | Fenêtre des répétitions, 10–86400 secondes |
+| `pluginErrorThreshold` | `15` | Seuil critique d’erreurs par source dans la fenêtre d’analyse, ou d’erreurs identiques dans la fenêtre des répétitions ; 1–10000 |
+| `reconnectIntervalSeconds` | `10` | Délai entre tentatives en cas de panne, 1–3600 secondes |
+| `historyLimit` | `50` | Nombre maximal d’entrées d’historique, 1–1000 |
+| `separateWarningSensor` | `false` | Ajouter un second Leak Sensor pour les avertissements |
+| `warningThreshold` | `5` | Seuil du capteur d’avertissements dans la fenêtre d’analyse, 1–10000 |
+
+Avec `separateWarningSensor: false`, le fonctionnement existant de `errorThreshold`/`monitorWarnings` est conservé. Avec `true`, le capteur existant compte uniquement les erreurs et **Homebridge Health Warnings** compte les WARN/WARNING indépendamment de `monitorWarnings`. Les périodes calmes sont indépendantes, avec le même délai `resetAfterSeconds`. L’UUID du capteur existant reste identique. Désactiver l’option retire le capteur d’avertissements ; ses automatisations devront être recréées s’il est réactivé.
+
+`StatusActive` indique si la surveillance est opérationnelle. `StatusFault` signale une surveillance indisponible/en reconnexion, indépendamment de `LeakDetected`. Une surveillance désactivée a StatusActive=false, sans prétendre à une panne de lecture. Les quatre états détaillés restent internes ; Apple Maison n’affiche pas nécessairement toutes les caractéristiques optionnelles. Aucun message ni nom de source issu des logs n’est envoyé à HomeKit.
+
+L’historique conserve le schéma version 1 et lit les anciens enregistrements sans compteurs. Chaque entrée contient l’heure d’observation, la gravité, la source, un message limité/expurgé, le nombre d’occurrences et les premières/dernières dates. Un groupe est mis à jour tant que sa première occurrence reste dans la fenêtre glissante ; ensuite, un nouveau groupe peut recouvrir des observations précédentes. Les compteurs d’historique ne doivent pas être additionnés comme un total cumulatif. Les écritures sont sérialisées, avec fichier temporaire privé et renommage atomique. Un fichier corrompu/trop grand est récupéré avec avertissement. Un échec d’écriture n’interrompt pas la détection. Les secrets courants, URL et adresses e-mail sont expurgés, sans garantie absolue pour tout texte libre. L’historique reste local, lisible uniquement par son propriétaire, avec des messages de 500 caractères maximum.
+
+## Limites de surveillance
+
+- **Le plugin ne peut pas détecter l’arrêt complet ou le crash de son propre processus Homebridge.** Il s’arrête avec lui. Maison peut afficher un pont injoignable, mais le plugin ne peut plus émettre d’alerte.
+- Un log ayant perdu à la fois ses couleurs ANSI et ses niveaux explicites ne permet pas une classification fiable. Les messages sans niveau et les continuations multilignes ne sont pas arbitrairement classés comme erreurs.
+- Au démarrage, les anciennes lignes, y compris une ligne incomplète, sont ignorées. Une rotation termine la lecture de l’ancien descripteur puis lit le nouveau fichier depuis le début au cycle suivant. Une disparition temporaire conserve l’ancien descripteur.
+- Une troncature sur place est détectée si la taille passe sous l’offset lu. Une troncature suivie d’une croissance entre deux lectures sur le même inode, plusieurs rotations rapides ou des écritures tardives dans un fichier déjà drainé peuvent perdre des observations. Les octets écrasés ne peuvent pas être reconstruits.
+- Limites : 1 Mio par cycle, 64 K caractères par ligne (les lignes trop longues sont ignorées), 10000 événements récents et 256 sources identifiées. Les sources supplémentaires deviennent inconnues. Une rafale dépassant ces bornes peut retarder ou sous-estimer les diagnostics. Un historique de plus de 8 Mio est ignoré avec avertissement.
+- Les fenêtres utilisent l’heure d’observation, pas la date contenue dans les logs. Le redémarrage initialise de nouvelles fenêtres d’alerte ; l’historique reste uniquement diagnostique.
 
 ## Dépannage
 
@@ -357,3 +437,12 @@ Les versions bêta de pull request et les versions bêta taguées utilisent le d
 ## Future vérification Homebridge
 
 Le plugin est conçu en tenant compte des attentes Homebridge Verified, mais ce README ne doit pas revendiquer ce statut avant une validation officielle.
+
+## Compatibility references / Références de compatibilité
+
+- [Homebridge Node.js support policy](https://github.com/homebridge/homebridge/wiki/How-To-Update-Node.js): Node.js 22 and 24 remain supported; this change preserves the existing package ranges and does not add Node.js 26 support.
+- [Homebridge 1.6.0 dependencies](https://github.com/homebridge/homebridge/blob/v1.6.0/package.json) and [HAP 0.11 Leak Sensor definitions](https://github.com/homebridge/HAP-NodeJS/blob/v0.11.0/src/lib/definitions/ServiceDefinitions.ts): StatusActive and StatusFault are optional standard Leak Sensor characteristics.
+- [Homebridge 1.6 logger](https://github.com/homebridge/homebridge/blob/v1.6.0/src/logger.ts): native severity colors are applied to the message; plain text is not guaranteed to contain a severity field.
+- [Node.js StringDecoder](https://nodejs.org/docs/latest-v22.x/api/string_decoder.html): incremental UTF-8 decoding preserves characters split across reads.
+
+Les plages de versions déclarées restent inchangées. La compatibilité des API a été contrôlée sur Homebridge 1.6/HAP 0.11 et sur Homebridge 2/HAP 2 ; cela ne remplace pas un essai sur une installation réelle et dans Apple Maison.

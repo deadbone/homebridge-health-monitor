@@ -1,4 +1,5 @@
-import type { API, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
+import type { Accessory } from '@homebridge/hap-nodejs';
+import type { API, Logging, PlatformAccessory, PlatformConfig } from 'homebridge';
 import { describe, expect, it, vi } from 'vitest';
 import { HealthMonitorPlatform } from '../src/platform.js';
 
@@ -95,7 +96,7 @@ describe('HealthMonitorPlatform', () => {
       UUID: 'expected',
       displayName: 'Cached Health Monitor',
       context: {},
-      getService: vi.fn((service: Service) => (service === 'AccessoryInformation' ? infoService : leakService)),
+      getService: vi.fn((service: unknown) => (service === 'AccessoryInformation' ? infoService : leakService)),
       addService: vi.fn(() => leakService),
     } as unknown as PlatformAccessory;
     const api = {
@@ -143,5 +144,43 @@ describe('HealthMonitorPlatform', () => {
     expect(api.updatePlatformAccessories).toHaveBeenCalledWith([expectedAccessory]);
     expect(api.unregisterPlatformAccessories).toHaveBeenCalledWith('homebridge-health-monitor', 'HealthMonitor', [staleAccessory]);
     expect(api.registerPlatformAccessories).not.toHaveBeenCalled();
+  });
+});
+
+describe('optional sensor registration', () => {
+  it.each([false, true])('preserves the original UUID with separateWarningSensor=%s', async (separateWarningSensor) => {
+    const hap = await import('@homebridge/hap-nodejs');
+    const { HealthMonitor } = await import('../src/services/health-monitor.js');
+    const start = vi.spyOn(HealthMonitor.prototype, 'start').mockImplementation(() => undefined);
+    const handlers = new Map<string, () => void>();
+    const existing = new hap.Accessory('Existing', hap.uuid.generate('homebridge-health-monitor:health-leak-sensor'));
+    const warning = new hap.Accessory('Warnings', hap.uuid.generate('homebridge-health-monitor:health-warning-sensor'));
+    const cached = (accessory: Accessory) => Object.assign(accessory, { context: {} }) as unknown as PlatformAccessory;
+    const api = {
+      user: { storagePath: () => '/tmp/homebridge' },
+      hap,
+      on: (event: string, handler: () => void) => handlers.set(event, handler),
+      registerPlatformAccessories: vi.fn(),
+      updatePlatformAccessories: vi.fn(),
+      unregisterPlatformAccessories: vi.fn(),
+    } as unknown as API;
+    try {
+      const platform = new HealthMonitorPlatform(makeLog(), { platform: 'HealthMonitor', separateWarningSensor }, api);
+      platform.configureAccessory(cached(existing));
+      platform.configureAccessory(cached(warning));
+      handlers.get('didFinishLaunching')?.();
+      expect(start).toHaveBeenCalledOnce();
+      expect(api.registerPlatformAccessories).not.toHaveBeenCalled();
+      expect(existing.getService(hap.Service.LeakSensor)).toBeDefined();
+      expect(existing.UUID).toBe(hap.uuid.generate('homebridge-health-monitor:health-leak-sensor'));
+      if (separateWarningSensor) {
+        expect(warning.getService(hap.Service.LeakSensor)).toBeDefined();
+        expect(api.unregisterPlatformAccessories).not.toHaveBeenCalled();
+      } else {
+        expect(api.unregisterPlatformAccessories).toHaveBeenCalledWith('homebridge-health-monitor', 'HealthMonitor', [warning]);
+      }
+    } finally {
+      start.mockRestore();
+    }
   });
 });

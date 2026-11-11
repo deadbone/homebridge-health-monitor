@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Fix inode replacement, truncation, incomplete lines, split UTF-8 and overlapping log reads; bound per-cycle work and line buffering.
+- Retry unavailable log files automatically, expose operational/fault state with standard HomeKit characteristics, and drain pending work during shutdown.
+- Prefer explicit severity prefixes and native Homebridge ANSI levels; stop matching arbitrary words and trailing message brackets as sources.
+- Add bounded per-source diagnostics, conservative repeated-error grouping, critical thresholds and explicit unknown states.
+- Serialize atomic history writes, migrate existing records, redact common secrets and recover corrupt/oversized files without disabling detection.
+- Prevent old anomaly evidence from reactivating an alert after quiet reset; retain active alerts during monitoring outages.
+- Preserve the existing global sensor by default; optionally separate warnings into a second sensor with an independent threshold and alert state.
+- Add configuration defaults, real-file integration tests, actual HAP service tests, and bilingual diagnostic/privacy/monitoring-limit documentation.
+- Keep package version, runtime dependencies and declared Node.js/Homebridge ranges unchanged. No publication performed.
+
 ## 0.1.0-beta.1
 
 - Stop asynchronous monitor startup cleanly when shutdown happens during initialization.

@@ -1,112 +1,139 @@
 import type { Logging } from 'homebridge';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { HISTORY_LIMIT } from '../config/defaults.js';
-import type { LogAnomaly } from './log-analyzer.js';
+import { sanitizeMessage, type LogAnomaly } from './log-analyzer.js';
 
 export interface StoredAnomaly {
   readonly timestamp: string;
   readonly severity: 'error' | 'warning';
-  readonly pluginName: string | undefined;
+  readonly pluginName: string;
   readonly message: string;
-}
-
-interface HistoryFile {
-  readonly schemaVersion: 1;
-  readonly anomalies: StoredAnomaly[];
+  readonly occurrences: number;
+  readonly firstOccurrence: string;
+  readonly lastOccurrence: string;
+  readonly groupKey?: string;
 }
 
 export class HistoryStore {
   private anomalies: StoredAnomaly[] = [];
   private loaded = false;
+  private queue: Promise<unknown> = Promise.resolve();
+  private readonly limit: number;
 
-  public constructor(
-    private readonly path: string,
-    private readonly log: Logging,
-    private readonly limit = HISTORY_LIMIT,
-  ) {}
-
-  public async add(anomaly: LogAnomaly): Promise<void> {
-    await this.load();
-    this.anomalies.push({
-      timestamp: new Date(anomaly.timestamp).toISOString(),
-      severity: anomaly.severity,
-      pluginName: anomaly.pluginName,
-      message: anomaly.message.slice(0, 500),
-    });
-    this.anomalies = this.anomalies.slice(-this.limit);
-    await this.save();
+  public constructor(private readonly path: string, private readonly log: Logging, limit = HISTORY_LIMIT) {
+    this.limit = Number.isInteger(limit) ? Math.max(1, Math.min(1000, limit)) : HISTORY_LIMIT;
   }
 
-  public async load(): Promise<readonly StoredAnomaly[]> {
+  public add(anomaly: LogAnomaly): Promise<void> {
+    return this.addMany([anomaly]);
+  }
+
+  public addMany(anomalies: readonly LogAnomaly[]): Promise<void> {
+    return this.serialize(async () => {
+      await this.read();
+      for (const anomaly of anomalies) {
+        const record: StoredAnomaly = {
+          timestamp: new Date(anomaly.timestamp).toISOString(),
+          severity: anomaly.severity,
+          pluginName: sanitizeMessage(anomaly.pluginName ?? 'unknown').slice(0, 100),
+          message: sanitizeMessage(anomaly.message),
+          occurrences: anomaly.occurrences ?? 1,
+          firstOccurrence: new Date(anomaly.firstOccurrence ?? anomaly.timestamp).toISOString(),
+          lastOccurrence: new Date(anomaly.lastOccurrence ?? anomaly.timestamp).toISOString(),
+          ...(anomaly.groupKey ? { groupKey: anomaly.groupKey } : {}),
+        };
+        const index = this.anomalies.findIndex((item) => record.occurrences > 1 && item.groupKey === record.groupKey && item.firstOccurrence === record.firstOccurrence);
+        if (index >= 0) {
+          this.anomalies.splice(index, 1);
+        }
+        this.anomalies.push(record);
+        this.anomalies = this.anomalies.slice(-this.limit);
+      }
+      await this.save();
+    });
+  }
+
+  public load(): Promise<readonly StoredAnomaly[]> {
+    return this.serialize(async () => {
+      await this.read();
+      return [...this.anomalies];
+    });
+  }
+
+  private serialize<T>(action: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(action);
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+
+  private async read(): Promise<void> {
     if (this.loaded) {
-      return this.anomalies;
+      return;
     }
     this.loaded = true;
-
     try {
-      const raw = await readFile(this.path, 'utf8');
-      const parsed = JSON.parse(raw) as unknown;
-      this.anomalies = parseHistory(parsed).slice(-this.limit);
-    } catch (error) {
-      if (isMissingFile(error)) {
-        this.anomalies = [];
-        return this.anomalies;
+      const file = await open(this.path, 'r');
+      try {
+        const info = await file.stat();
+        if (!info.isFile() || info.size > 8 * 1024 * 1024) {
+          throw new Error('Invalid history size');
+        }
+        const parsed: unknown = JSON.parse(await file.readFile('utf8'));
+        if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !Array.isArray(parsed.anomalies)) {
+          throw new Error('Invalid history format');
+        }
+        this.anomalies = parsed.anomalies.map(parseRecord).filter((item): item is StoredAnomaly => item !== undefined).slice(-this.limit);
+      } finally {
+        await file.close();
       }
-      this.log.warn('Health Monitor could not load anomaly history: %s', errorMessage(error));
+    } catch (error) {
+      if (!(isRecord(error) && error.code === 'ENOENT')) {
+        this.log.warn('Health Monitor could not load anomaly history; starting with an empty history.');
+      }
       this.anomalies = [];
     }
-    return this.anomalies;
   }
 
   private async save(): Promise<void> {
-    const file: HistoryFile = {
-      schemaVersion: 1,
-      anomalies: this.anomalies,
-    };
-    const tempPath = `${this.path}.tmp`;
+    const tempPath = `${this.path}.${randomUUID()}.tmp`;
     await mkdir(dirname(this.path), { recursive: true });
-    await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
-    await rename(tempPath, this.path);
+    try {
+      const file = await open(tempPath, 'wx', 0o600);
+      try {
+        await file.writeFile(`${JSON.stringify({ schemaVersion: 1, anomalies: this.anomalies }, null, 2)}\n`, 'utf8');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await rename(tempPath, this.path);
+    } finally {
+      await rm(tempPath, { force: true });
+    }
   }
 }
 
-function parseHistory(value: unknown): StoredAnomaly[] {
-  if (!isHistoryFile(value)) {
-    return [];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function validDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+function parseRecord(value: unknown): StoredAnomaly | undefined {
+  if (!isRecord(value) || !validDate(value.timestamp) || (value.severity !== 'error' && value.severity !== 'warning') || typeof value.message !== 'string') {
+    return undefined;
   }
-  return value.anomalies.filter(isStoredAnomaly);
-}
-
-function isHistoryFile(value: unknown): value is HistoryFile {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'schemaVersion' in value &&
-    value.schemaVersion === 1 &&
-    'anomalies' in value &&
-    Array.isArray(value.anomalies)
-  );
-}
-
-function isStoredAnomaly(value: unknown): value is StoredAnomaly {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'timestamp' in value &&
-    typeof value.timestamp === 'string' &&
-    'severity' in value &&
-    (value.severity === 'error' || value.severity === 'warning') &&
-    'message' in value &&
-    typeof value.message === 'string' &&
-    (!('pluginName' in value) || value.pluginName === undefined || typeof value.pluginName === 'string')
-  );
-}
-
-function isMissingFile(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return {
+    timestamp: value.timestamp,
+    severity: value.severity,
+    pluginName: typeof value.pluginName === 'string' ? sanitizeMessage(value.pluginName).slice(0, 100) : 'unknown',
+    message: sanitizeMessage(value.message),
+    occurrences: typeof value.occurrences === 'number' && Number.isInteger(value.occurrences) && value.occurrences > 0 ? Math.min(value.occurrences, 10000) : 1,
+    firstOccurrence: validDate(value.firstOccurrence) ? value.firstOccurrence : value.timestamp,
+    lastOccurrence: validDate(value.lastOccurrence) ? value.lastOccurrence : value.timestamp,
+    ...(typeof value.groupKey === 'string' && /^[a-f0-9]{64}$/.test(value.groupKey) ? { groupKey: value.groupKey } : {}),
+  };
 }

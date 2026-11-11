@@ -11,6 +11,7 @@ const config: NormalizedPlatformConfig = {
   errorThreshold: 3,
   monitorWarnings: false,
   debug: false,
+  groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 1, historyLimit: 50, separateWarningSensor: false, warningThreshold: 5,
 };
 
 describe('LogAnalyzer', () => {
@@ -80,5 +81,72 @@ describe('LogAnalyzer', () => {
 
     expect(analyzer.snapshot(11_000).anomalyCount).toBe(2);
     expect(analyzer.snapshot(11_001).anomalyCount).toBe(1);
+  });
+});
+
+describe('conservative levels and diagnostics', () => {
+  it.each([
+    '[homebridge-test] [INFO] previous error resolved',
+    '[homebridge-test] connected without error',
+    '[homebridge-test] message mentions [ERROR] later',
+    '[homebridge-test] [WARN] error retrying',
+  ])('does not count false positives: %s', (line) => {
+    const analyzer = new LogAnalyzer(config);
+    analyzer.ingest(line, 1000);
+    expect(analyzer.snapshot(1000).anomalyCount).toBe(0);
+  });
+
+  it.each(['ERROR: failed', '[ERROR] failed', '\u001b[31mfailed\u001b[39m'])('detects level format %s', (message) => {
+    const analyzer = new LogAnalyzer(config);
+    expect(analyzer.ingest(`[11/11/2026, 10:00:00] [homebridge-test] ${message}`)?.severity).toBe('error');
+  });
+
+  it.each(['[WARN] retry', '[WARNING] retry', 'WARNING: retry', '\u001b[33mretry\u001b[39m'])('retains warning diagnostics without enabling global warning alerts: %s', (message) => {
+    const analyzer = new LogAnalyzer(config);
+    analyzer.ingest(`[homebridge-test] ${message}`, 1000);
+    expect(analyzer.snapshot(1000).plugins[0]).toMatchObject({ warningCount: 1, severity: 'WARNING' });
+    expect(analyzer.snapshot(1000).alertActive).toBe(false);
+  });
+
+  it('does not attribute a message bracket to a plugin and uses unknown for ambiguous sources', () => {
+    const analyzer = new LogAnalyzer(config);
+    expect(analyzer.ingest('[homebridge-test] [ERROR] failed [device]')?.pluginName).toBe('homebridge-test');
+    expect(analyzer.ingest('[ERROR] failed [device]')?.pluginName).toBe('unknown');
+    expect(analyzer.ingest('[first] [second] [ERROR] failed')?.pluginName).toBe('unknown');
+  });
+
+  it('counts repetitions by source and exact message, with first/last occurrences', () => {
+    const analyzer = new LogAnalyzer({ ...config, errorThreshold: 100 });
+    for (let i = 0; i < 15; i++) {
+      const anomaly = analyzer.ingest('[homebridge-a] [ERROR] device 42 timeout', 1000 + i * 1000);
+      expect(anomaly?.occurrences).toBe(i + 1);
+      expect(anomaly?.firstOccurrence).toBe(1000);
+      expect(anomaly?.lastOccurrence).toBe(1000 + i * 1000);
+    }
+    expect(analyzer.snapshot(15000)).toMatchObject({ alertActive: true, plugins: [ { pluginName: 'homebridge-a', repeatedErrorCount: 15, severity: 'CRITICAL' } ] });
+    expect(analyzer.ingest('[homebridge-a] [ERROR] device 43 timeout', 16000)?.occurrences).toBe(1);
+    expect(analyzer.ingest('[homebridge-b] [ERROR] device 42 timeout', 16000)?.occurrences).toBe(1);
+    expect(analyzer.ingest('[homebridge-a] [ERROR] device 42 timeout', 200000)?.occurrences).toBe(1);
+    expect(analyzer.snapshot(600000).plugins.every((plugin) => plugin.severity === 'HEALTHY')).toBe(true);
+    expect(analyzer.snapshot(600000).plugins[0]).toMatchObject({ lastError: 'device 42 timeout', lastOccurrence: 200000, errorCount: 0 });
+    expect(analyzer.snapshot(600000, false).plugins.every((plugin) => plugin.severity === 'UNKNOWN')).toBe(true);
+  });
+
+  it('can disable repetition grouping and reset previous alert evidence', () => {
+    const analyzer = new LogAnalyzer({ ...config, groupRepeatedErrors: false });
+    analyzer.ingest('[homebridge-a] [ERROR] same', 1000);
+    expect(analyzer.ingest('[homebridge-a] [ERROR] same', 2000)?.occurrences).toBe(1);
+    expect(analyzer.snapshot(2000).plugins[0]?.repeatedErrorCount).toBe(0);
+    analyzer.reset();
+    expect(analyzer.snapshot(2000).anomalyCount).toBe(0);
+  });
+
+  it('redacts common credentials without merging messages with different secrets', () => {
+    const analyzer = new LogAnalyzer(config);
+    const first = analyzer.ingest('[homebridge-a] [ERROR] token=abc https://user:pass@host/secret', 1000);
+    const second = analyzer.ingest('[homebridge-a] [ERROR] token=def https://user:pass@host/secret', 2000);
+    expect(first?.message).toBe('token=[redacted] [url]');
+    expect(first?.line).toBe('');
+    expect(second?.occurrences).toBe(1);
   });
 });

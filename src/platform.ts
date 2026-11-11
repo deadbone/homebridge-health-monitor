@@ -13,6 +13,7 @@ const ACCESSORY_ROLE = 'health-leak-sensor';
 export class HealthMonitorPlatform implements DynamicPlatformPlugin {
   public readonly accessories = new Map<string, PlatformAccessory>();
   public readonly configData: NormalizedPlatformConfig | undefined;
+  private warningSensor: HealthLeakSensorAccessory | undefined;
   private sensor: HealthLeakSensorAccessory | undefined;
   private readonly monitor: HealthMonitor | undefined;
 
@@ -38,10 +39,11 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
       return;
     }
 
-    const history = new HistoryStore(join(storagePath, HISTORY_FILE_NAME), log);
+    const history = new HistoryStore(join(storagePath, HISTORY_FILE_NAME), log, this.configData.historyLimit);
     this.monitor = new HealthMonitor(this.configData, log, history);
     this.monitor.onStatus((status) => {
-      this.sensor?.update(status.active);
+      this.sensor?.update(status.active, status.monitoring);
+      this.warningSensor?.update(status.warningActive, status.monitoring);
     });
 
     this.api.on('didFinishLaunching', () => {
@@ -53,25 +55,32 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
         this.monitor.start();
       } catch (error) {
         this.log.error('Health Monitor failed to start: %s', errorMessage(error));
-        this.monitor.stop();
+        void this.monitor.stop();
       }
     });
     this.api.on('shutdown', () => {
-      this.monitor?.stop();
+      void this.monitor?.stop();
     });
   }
 
   public configureAccessory(accessory: PlatformAccessory): void {
     this.log.info('Loading accessory from cache: %s', accessory.displayName);
     this.accessories.set(accessory.UUID, accessory);
+    if (!this.monitor) {
+      const sensor = new HealthLeakSensorAccessory(this, accessory, accessory.displayName);
+      sensor.update(false, 'DISABLED');
+    }
   }
 
   private registerConfiguredAccessories(): void {
     const expectedAccessory = this.registerSensor();
-    const expectedUUID = expectedAccessory.UUID;
+    const expectedUUIDs = new Set([expectedAccessory.UUID]);
+    if (this.configData?.separateWarningSensor) {
+      expectedUUIDs.add(this.registerSensor('health-warning-sensor', 'Homebridge Health Warnings').UUID);
+    }
 
     for (const [uuid, accessory] of this.accessories) {
-      if (uuid !== expectedUUID) {
+      if (!expectedUUIDs.has(uuid)) {
         this.log.info('Removing stale accessory from cache: %s', accessory.displayName);
         this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.delete(uuid);
@@ -89,12 +98,12 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  private registerSensor(): PlatformAccessory {
-    const uuid = this.api.hap.uuid.generate(`${ACCESSORY_UUID_NAMESPACE}:${ACCESSORY_ROLE}`);
+  private registerSensor(role = ACCESSORY_ROLE, displayName = ACCESSORY_DISPLAY_NAME): PlatformAccessory {
+    const uuid = this.api.hap.uuid.generate(`${ACCESSORY_UUID_NAMESPACE}:${role}`);
     const existingAccessory = this.accessories.get(uuid);
-    const accessory = existingAccessory ?? new this.api.platformAccessory(ACCESSORY_DISPLAY_NAME, uuid);
-    accessory.displayName = ACCESSORY_DISPLAY_NAME;
-    accessory.context.role = ACCESSORY_ROLE;
+    const accessory = existingAccessory ?? new this.api.platformAccessory(displayName, uuid);
+    accessory.displayName = displayName;
+    accessory.context.role = role;
 
     if (!existingAccessory) {
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -103,7 +112,12 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
       this.api.updatePlatformAccessories([accessory]);
     }
 
-    this.sensor = new HealthLeakSensorAccessory(this, accessory, ACCESSORY_DISPLAY_NAME);
+    const sensor = new HealthLeakSensorAccessory(this, accessory, displayName, role);
+    if (role === ACCESSORY_ROLE) {
+      this.sensor = sensor;
+    } else {
+      this.warningSensor = sensor;
+    }
     return accessory;
   }
 }

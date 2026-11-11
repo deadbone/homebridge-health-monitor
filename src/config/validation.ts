@@ -29,6 +29,13 @@ export function normalizeConfig(config: PlatformConfig, storagePath: string): No
     errorThreshold: readInteger(config.errorThreshold, 'errorThreshold', DEFAULT_ERROR_THRESHOLD, 1, 10000),
     monitorWarnings: readBoolean(config.monitorWarnings, 'monitorWarnings', DEFAULT_MONITOR_WARNINGS),
     debug: readBoolean(config.debug, 'debug', false),
+    groupRepeatedErrors: readBoolean(config.groupRepeatedErrors, 'groupRepeatedErrors', true),
+    repeatWindowSeconds: readInteger(config.repeatWindowSeconds, 'repeatWindowSeconds', 120, 10, 86400),
+    pluginErrorThreshold: readInteger(config.pluginErrorThreshold, 'pluginErrorThreshold', 15, 1, 10000),
+    reconnectIntervalSeconds: readInteger(config.reconnectIntervalSeconds, 'reconnectIntervalSeconds', 10, 1, 3600),
+    separateWarningSensor: readBoolean(config.separateWarningSensor, 'separateWarningSensor', false),
+    warningThreshold: readInteger(config.warningThreshold, 'warningThreshold', 5, 1, 10000),
+    historyLimit: readInteger(config.historyLimit, 'historyLimit', 50, 1, 1000),
   };
 }
 

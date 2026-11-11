@@ -101,7 +101,7 @@ describe('HistoryStore', () => {
 
     const store = new HistoryStore(path, makeLog());
 
-    await expect(store.load()).resolves.toEqual([
+    await expect(store.load()).resolves.toMatchObject([
       {
         timestamp: '2026-07-26T10:00:00.000Z',
         severity: 'warning',
@@ -114,5 +114,57 @@ describe('HistoryStore', () => {
         message: 'valid error',
       },
     ]);
+  });
+});
+
+describe('history reliability', () => {
+  it('serializes simultaneous additions and persists valid bounded JSON across restart', async () => {
+    const path = join(await makeTempDir(), 'history.json');
+    const store = new HistoryStore(path, makeLog(), 5);
+    await Promise.all(Array.from({ length: 20 }, (_, index) => store.add(makeAnomaly(`message ${String(index)}`, index * 1000))));
+    const reopened = new HistoryStore(path, makeLog());
+    const records = await reopened.load();
+    expect(records).toHaveLength(5);
+    expect(records[0]?.message).toBe('message 15');
+    expect(records.at(-1)?.occurrences).toBe(1);
+    expect(records.at(-1)?.firstOccurrence).toBe(new Date(19000).toISOString());
+  });
+
+  it('updates a repeated group without creating duplicate records', async () => {
+    const path = join(await makeTempDir(), 'history.json');
+    const store = new HistoryStore(path, makeLog());
+    const groupKey = 'a'.repeat(64);
+    await store.add({ ...makeAnomaly('same'), groupKey, occurrences: 1, firstOccurrence: 1000 });
+    await store.add({ ...makeAnomaly('same', 2000), groupKey, occurrences: 2, firstOccurrence: 1000 });
+    const records = await new HistoryStore(path, makeLog()).load();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ occurrences: 2, firstOccurrence: new Date(1000).toISOString(), lastOccurrence: new Date(2000).toISOString() });
+  });
+
+  it.each(['{broken', '{"schemaVersion":99,"anomalies":[]}', 'x'.repeat(8 * 1024 * 1024 + 1)])('recovers corrupt or oversized history', async (contents) => {
+    const path = join(await makeTempDir(), 'history.json');
+    await writeFile(path, contents);
+    const log = makeLog();
+    const store = new HistoryStore(path, log);
+    expect(await store.load()).toEqual([]);
+    expect(log.warn).toHaveBeenCalledOnce();
+    await store.add(makeAnomaly('recovered'));
+    expect(await new HistoryStore(path, log).load()).toHaveLength(1);
+  });
+
+  it('redacts old and new messages, discards invalid dates and migrates v1 records', async () => {
+    const path = join(await makeTempDir(), 'history.json');
+    await writeFile(path, JSON.stringify({ schemaVersion: 1, anomalies: [
+      { timestamp: 'invalid', severity: 'error', message: 'bad' },
+      { timestamp: new Date(1000).toISOString(), severity: 'error', message: 'password=secret' },
+    ] }));
+    const store = new HistoryStore(path, makeLog());
+    expect(await store.load()).toMatchObject([{ pluginName: 'unknown', occurrences: 1, message: 'password=[redacted]' }]);
+    await store.add(makeAnomaly('Authorization: Bearer xyz token=abc me@example.com'));
+    const contents = await readFile(path, 'utf8');
+    expect(contents).not.toContain('secret');
+    expect(contents).not.toContain('xyz');
+    expect(contents).not.toContain('abc');
+    expect(contents).not.toContain('me@example.com');
   });
 });

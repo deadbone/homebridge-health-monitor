@@ -19,6 +19,7 @@ describe('normalizeConfig', () => {
       errorThreshold: 3,
       monitorWarnings: false,
       debug: false,
+      groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 10, historyLimit: 50, separateWarningSensor: false, warningThreshold: 5,
     });
   });
 
@@ -55,5 +56,17 @@ describe('normalizeConfig', () => {
     expect(() => normalizeConfig({ platform: 'HealthMonitor', monitorWarnings: 'yes' }, '/tmp')).toThrow(ConfigValidationError);
     expect(() => normalizeConfig({ platform: 'HealthMonitor', errorThreshold: 0 }, '/tmp')).toThrow(ConfigValidationError);
     expect(() => normalizeConfig({ platform: 'HealthMonitor', scanIntervalSeconds: 1.5 }, '/tmp')).toThrow(ConfigValidationError);
+  });
+});
+
+describe('diagnostic configuration', () => {
+  it.each(['repeatWindowSeconds', 'pluginErrorThreshold', 'reconnectIntervalSeconds', 'historyLimit', 'warningThreshold'])('validates %s bounds', (field) => {
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', [field]: 0 }, '/tmp')).toThrow(ConfigValidationError);
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', [field]: Infinity }, '/tmp')).toThrow(ConfigValidationError);
+  });
+  it('validates opt-in separation and grouping flags', () => {
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', separateWarningSensor: 'true' }, '/tmp')).toThrow(ConfigValidationError);
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', groupRepeatedErrors: 1 }, '/tmp')).toThrow(ConfigValidationError);
+    expect(normalizeConfig({ platform: 'HealthMonitor', separateWarningSensor: true, warningThreshold: 8 }, '/tmp')).toMatchObject({ separateWarningSensor: true, warningThreshold: 8 });
   });
 });

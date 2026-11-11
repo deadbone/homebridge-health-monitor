@@ -4,27 +4,32 @@ import { LogAnalyzer, type HealthSnapshot, type LogAnomaly } from './log-analyze
 import { HistoryStore } from './history-store.js';
 import { LogTail } from './log-tail.js';
 
+export type MonitoringState = 'OPERATIONAL' | 'UNAVAILABLE' | 'DISABLED' | 'RECONNECTING';
 export interface HealthStatus {
   readonly active: boolean;
+  readonly warningActive: boolean;
+  readonly monitoring: MonitoringState;
   readonly snapshot: HealthSnapshot;
 }
-
 export type StatusListener = (status: HealthStatus) => void;
 
 export class HealthMonitor {
   private readonly analyzer: LogAnalyzer;
   private readonly tail: LogTail;
-  private listeners: StatusListener[] = [];
+  private readonly listeners: StatusListener[] = [];
   private pollTimer: NodeJS.Timeout | undefined;
-  private resetTimer: NodeJS.Timeout | undefined;
+  private task: Promise<void> = Promise.resolve();
+  private generation = 0;
   private running = false;
   private active = false;
+  private warningActive = false;
+  private lastCountedAt: number | undefined;
+  private lastWarningAt: number | undefined;
+  private monitoring: MonitoringState = 'DISABLED';
+  private readFailed = false;
+  private historyFailed = false;
 
-  public constructor(
-    private readonly config: NormalizedPlatformConfig,
-    private readonly log: Logging,
-    private readonly history: HistoryStore,
-  ) {
+  public constructor(private readonly config: NormalizedPlatformConfig, private readonly log: Logging, private readonly history: HistoryStore) {
     this.analyzer = new LogAnalyzer(config);
     this.tail = new LogTail(config.logFile);
   }
@@ -38,108 +43,180 @@ export class HealthMonitor {
       return;
     }
     this.running = true;
-    void this.startPolling();
+    const generation = ++this.generation;
+    this.task = this.task.then(() => this.initialize(generation));
   }
 
-  public stop(): void {
+  public stop(): Promise<void> {
     this.running = false;
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
-    this.clearResetTimer();
-    void this.tail.close().catch((error: unknown) => {
-      this.log.debug('Health Monitor failed to close log file: %s', errorMessage(error));
+    this.generation++;
+    clearTimeout(this.pollTimer);
+    this.pollTimer = undefined;
+    this.monitoring = 'DISABLED';
+    this.emit();
+    this.task = this.task.then(() => this.tail.close()).catch(() => {
+      this.log.debug('Health Monitor failed to close log file.');
     });
+    return this.task;
   }
 
-  private async startPolling(): Promise<void> {
+  private current(generation: number): boolean {
+    return this.running && this.generation === generation;
+  }
+
+  private async initialize(generation: number): Promise<void> {
+    if (!this.current(generation)) {
+      return;
+    }
+    this.analyzer.reset();
+    this.active = false;
+    this.warningActive = false;
+    this.lastCountedAt = undefined;
+    this.lastWarningAt = undefined;
+    this.monitoring = 'RECONNECTING';
+    this.emit();
+    await this.history.load();
+    if (!this.current(generation)) {
+      return;
+    }
     try {
-      await this.history.load();
       await this.tail.openAtEnd();
-      if (!this.isRunning()) {
-        await this.tail.close();
+      if (!this.current(generation)) {
         return;
       }
       this.log.info('Health Monitor started watching %s', this.config.logFile);
-    } catch (error) {
-      this.running = false;
-      this.log.warn('Health Monitor cannot read %s: %s. Monitoring is disabled.', this.config.logFile, errorMessage(error));
+      this.monitoring = 'OPERATIONAL';
+      this.readFailed = false;
       this.emit();
-      return;
+    } catch {
+      if (this.current(generation)) {
+        this.unavailable();
+      }
     }
-
-    await this.poll();
-    if (!this.isRunning()) {
-      return;
-    }
-    this.pollTimer = setInterval(() => {
-      void this.poll();
-    }, this.config.scanIntervalSeconds * 1000);
+    this.schedule(generation);
   }
 
-  private async poll(): Promise<void> {
+  private schedule(generation: number): void {
+    if (!this.current(generation)) {
+      return;
+    }
+    let seconds = this.monitoring === 'OPERATIONAL' ? this.config.scanIntervalSeconds : this.config.reconnectIntervalSeconds;
+    if (this.monitoring === 'OPERATIONAL') {
+      for (const timestamp of [this.lastCountedAt, this.lastWarningAt]) {
+        if (timestamp !== undefined) {
+          const remaining = this.config.resetAfterSeconds - (Date.now() - timestamp) / 1000;
+          if (remaining > 0) {
+            seconds = Math.min(seconds, remaining);
+          }
+        }
+      }
+    }
+    this.pollTimer = setTimeout(() => {
+      this.task = this.poll(generation);
+    }, seconds * 1000);
+  }
+
+  private async poll(generation: number): Promise<void> {
     try {
+      if (this.readFailed) {
+        this.monitoring = 'RECONNECTING';
+        this.emit();
+      }
       const lines = await this.tail.readNewLines();
-      const anomalies = lines.map((line) => this.analyzer.ingest(line)).filter((anomaly): anomaly is LogAnomaly => anomaly !== undefined);
-      if (anomalies.length > 0 && this.config.debug) {
-        this.log.debug('Health Monitor ingested %d anomaly/anomalies.', anomalies.length);
+      if (!this.current(generation)) {
+        return;
       }
-      for (const anomaly of anomalies) {
-        await this.history.add(anomaly);
-        this.refreshResetTimer();
+      if (this.readFailed) {
+        this.log.info('Health Monitor log monitoring restored.');
       }
-      this.updateAlertState();
-    } catch (error) {
-      this.log.warn('Health Monitor cannot read %s: %s', this.config.logFile, errorMessage(error));
+      this.readFailed = false;
+      this.monitoring = 'OPERATIONAL';
+      const anomalies: LogAnomaly[] = [];
+      for (const line of lines) {
+        const anomaly = this.analyzer.ingest(line);
+        if (!anomaly) {
+          continue;
+        }
+        if (anomaly.severity === 'error' || (this.config.monitorWarnings && !this.config.separateWarningSensor)) {
+          this.lastCountedAt = anomaly.timestamp;
+        }
+        if (anomaly.severity === 'warning') {
+          this.lastWarningAt = anomaly.timestamp;
+        }
+        anomalies.push(anomaly);
+      }
+      this.updateAlerts();
+      if (anomalies.length > 0 || this.historyFailed) {
+        try {
+          await this.history.addMany(anomalies);
+          if (this.historyFailed) {
+            this.log.info('Health Monitor history storage restored.');
+          }
+          this.historyFailed = false;
+        } catch {
+          if (!this.historyFailed) {
+            this.log.warn('Health Monitor cannot save anomaly history; log monitoring continues.');
+          }
+          this.historyFailed = true;
+        }
+      }
+    } catch {
+      if (this.current(generation)) {
+        this.unavailable();
+      }
+    } finally {
+      this.schedule(generation);
     }
   }
 
-  private updateAlertState(): void {
-    const snapshot = this.analyzer.snapshot();
-    if (snapshot.alertActive && !this.active) {
-      const last = snapshot.lastAnomaly;
-      this.active = true;
-      this.log.warn(
-        'Health Monitor alert active: %d anomaly/anomalies in the analysis window%s.',
-        snapshot.anomalyCount,
-        last?.pluginName ? `; latest source: ${last.pluginName}` : '',
-      );
+  private unavailable(): void {
+    if (!this.readFailed) {
+      this.log.warn('Health Monitor log monitoring unavailable; reconnecting automatically.');
     }
-    this.emit(snapshot);
+    this.readFailed = true;
+    this.monitoring = 'UNAVAILABLE';
+    // Do not reset an alert while observations are unavailable.
+    this.emit();
   }
 
-  private refreshResetTimer(): void {
-    this.clearResetTimer();
-    this.resetTimer = setTimeout(() => {
+  private updateAlerts(): void {
+    const now = Date.now();
+    const snapshot = this.analyzer.snapshot(now);
+    const quiet = this.lastCountedAt !== undefined && now - this.lastCountedAt >= this.config.resetAfterSeconds * 1000;
+    if (quiet) {
+      if (this.active) {
+        this.log.info('Health Monitor alert reset after %d second(s) without a new anomaly.', this.config.resetAfterSeconds);
+      }
       this.active = false;
-      this.log.info('Health Monitor alert reset after %d second(s) without a new anomaly.', this.config.resetAfterSeconds);
-      this.emit();
-    }, this.config.resetAfterSeconds * 1000);
-  }
-
-  private clearResetTimer(): void {
-    if (!this.resetTimer) {
-      return;
+      this.analyzer.reset('error');
+      if (this.config.monitorWarnings && !this.config.separateWarningSensor) {
+        this.analyzer.reset('warning');
+      }
+      this.lastCountedAt = undefined;
+    } else if (snapshot.alertActive && !this.active) {
+      this.active = true;
+      this.log.warn('Health Monitor anomaly alert active.');
     }
-    clearTimeout(this.resetTimer);
-    this.resetTimer = undefined;
+    const warningQuiet = this.lastWarningAt !== undefined && now - this.lastWarningAt >= this.config.resetAfterSeconds * 1000;
+    if (warningQuiet) {
+      if (this.warningActive) {
+        this.log.info('Health Monitor warning alert reset after the quiet period.');
+      }
+      this.warningActive = false;
+      this.analyzer.reset('warning');
+      this.lastWarningAt = undefined;
+    } else if (this.config.separateWarningSensor && snapshot.anomalies.filter((item) => item.severity === 'warning').length >= this.config.warningThreshold) {
+      if (!this.warningActive) {
+        this.log.warn('Health Monitor warning alert active.');
+      }
+      this.warningActive = true;
+    }
+    this.emit();
   }
 
-  private isRunning(): boolean {
-    return this.running;
-  }
-
-  private emit(snapshot = this.analyzer.snapshot()): void {
+  private emit(snapshot = this.analyzer.snapshot(Date.now(), this.monitoring === 'OPERATIONAL')): void {
     for (const listener of this.listeners) {
-      listener({
-        active: this.active,
-        snapshot,
-      });
+      listener({ active: this.active, warningActive: this.warningActive, monitoring: this.monitoring, snapshot });
     }
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

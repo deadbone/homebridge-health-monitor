@@ -49,7 +49,7 @@
         "title": "Monitor WARN Lines",
         "type": "boolean",
         "default": false,
-        "description": "When enabled, WARN lines count as anomalies together with ERROR lines."
+        "description": "In single-sensor mode, include WARN and WARNING in the global anomaly threshold. Warnings remain available in local diagnostics in either mode."
       },
       "scanIntervalSeconds": {
         "title": "Scan Interval",
@@ -63,6 +63,58 @@
         "title": "Debug Logging",
         "type": "boolean",
         "default": false
+      },
+      "groupRepeatedErrors": {
+        "title": "Group Repeated Errors",
+        "type": "boolean",
+        "default": true,
+        "description": "Group identical trimmed error messages from the same identified source. Distinct IDs and numbers remain distinct."
+      },
+      "repeatWindowSeconds": {
+        "title": "Repeated Error Window",
+        "type": "integer",
+        "default": 120,
+        "minimum": 10,
+        "maximum": 86400,
+        "description": "Rolling window in seconds for repeated errors."
+      },
+      "pluginErrorThreshold": {
+        "title": "Critical Errors Per Plugin",
+        "type": "integer",
+        "default": 15,
+        "minimum": 1,
+        "maximum": 10000,
+        "description": "Trigger the error/global alert when one identified source reaches this many errors in the analysis window or identical errors in the repeated error window."
+      },
+      "reconnectIntervalSeconds": {
+        "title": "Log Reconnection Interval",
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 3600,
+        "description": "Seconds between retries while the log file is unavailable."
+      },
+      "historyLimit": {
+        "title": "History Record Limit",
+        "type": "integer",
+        "default": 50,
+        "minimum": 1,
+        "maximum": 1000,
+        "description": "Maximum number of locally stored anomaly records (a repeated group occupies one record while its first occurrence remains in the window)."
+      },
+      "separateWarningSensor": {
+        "title": "Separate Warning Sensor",
+        "type": "boolean",
+        "default": false,
+        "description": "Expose an additional Leak Sensor for warnings. The existing sensor then counts errors only. Warning monitoring is enabled for the warning sensor independently of monitorWarnings."
+      },
+      "warningThreshold": {
+        "title": "Warning Sensor Threshold",
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 10000,
+        "description": "Warnings in the analysis window required to activate the optional separate warning sensor."
       }
     }
   }
