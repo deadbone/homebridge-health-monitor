@@ -37,7 +37,7 @@
           { "title": "Contact sensor (default)", "enum": ["contact"] },
           { "title": "Leak sensor (may sound during Do Not Disturb)", "enum": ["leak"] }
         ],
-        "description": "A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous leak sensor and its HomeKit automations."
+        "description": "For Contact, closed means no alert and open means an active alert. In Eve, Contact Detected = Yes means closed. A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous leak sensor and its HomeKit automations."
       },
       "analysisWindowSeconds": {
         "title": "Analysis Window",
@@ -126,7 +126,7 @@
           { "title": "Contact sensor (default)", "enum": ["contact"] },
           { "title": "Leak sensor (may sound during Do Not Disturb)", "enum": ["leak"] }
         ],
-        "description": "Applies only when Separate Warning Sensor is enabled. A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous warning leak sensor and its HomeKit automations."
+        "description": "Applies only when Separate Warning Sensor is enabled. For Contact, closed means no alert and open means an active alert. In Eve, Contact Detected = Yes means closed. A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous warning leak sensor and its HomeKit automations."
       },
       "warningThreshold": {
         "title": "Warning Sensor Threshold",

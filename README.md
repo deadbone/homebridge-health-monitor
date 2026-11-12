@@ -83,6 +83,8 @@ Choose `errorSensorType` for the main sensor and `warningSensorType` for the opt
 | Contact (`contact`, default) | Closed | Open |
 | Leak (`leak`) | No leak detected | Leak detected |
 
+In Eve, **Contact Detected = Yes** means the sensor is **closed** and no alert is active.
+
 **Leak notifications may play a sound even when Do Not Disturb is on.** For contact sensors, use Activity Notifications in the accessory settings in Apple Home. Your iPhone Focus settings determine when notifications can interrupt you. [Apple Home notifications](https://support.apple.com/en-us/105042) · [Apple critical alerts](https://support.apple.com/en-us/108781)
 
 **Upgrading from 0.1.x:** Homebridge replaces existing leak sensors with contact sensors at the first restart on 0.2.0 if their type is omitted. Set the relevant type to `leak` before that restart to keep its existing accessory and automations. Changing either type later replaces that accessory at restart. Set up its activity notifications again and recreate any automations that referenced the previous sensor.
@@ -310,6 +312,8 @@ Choisissez le type du capteur principal avec `errorSensorType` et celui du capte
 | --- | --- | --- |
 | Contact (`contact`, par défaut) | Fermé | Ouvert |
 | Fuite (`leak`) | Aucune fuite détectée | Fuite détectée |
+
+Dans Eve, **« Contact détecté : Oui »** signifie que le capteur est **fermé** et qu’aucune alerte n’est active.
 
 **Une notification de fuite peut sonner même si « Ne pas déranger » est activé.** Pour un capteur de contact, utilisez les notifications d’activité dans les réglages de l’accessoire dans Maison. Les réglages de concentration de l’iPhone déterminent quand ces notifications peuvent vous interrompre. [Notifications dans Maison](https://support.apple.com/fr-fr/105042) · [Alertes critiques Apple](https://support.apple.com/fr-fr/108781)
 
