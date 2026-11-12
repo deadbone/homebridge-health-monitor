@@ -89,7 +89,9 @@ describe('HealthMonitor integration', () => {
     await rm(historyPath, { recursive: true });
     await appendFile(path, '[homebridge-test] [ERROR] third\n');
     await vi.waitFor(() => { expect(log.info).toHaveBeenCalledWith('Health Monitor history storage restored.'); });
-    expect(await readFile(historyPath, 'utf8')).toContain('third');
+    await vi.waitFor(async () => {
+      expect(await readFile(historyPath, 'utf8')).toContain('third');
+    });
   });
 
   it('separates warning thresholds from error thresholds', async () => {
