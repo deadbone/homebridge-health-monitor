@@ -24,7 +24,7 @@ The plugin is intentionally small. It reads only the configured Homebridge log f
 ## Compatibility
 
 - Homebridge: `^1.6.0 || ^2.0.0`
-- Node.js: `^22.12.0 || ^24.0.0`
+- Node.js: `>=22.12.0`
 
 This plugin does not require Homebridge UI. Homebridge UI is only used to render the configuration schema when it is installed.
 
@@ -164,7 +164,7 @@ History schema version 1 remains readable, including older records without occur
 - Initial startup ignores existing lines and incomplete preexisting lines. Rotation drains the old descriptor, then reads the replacement from the beginning on the next cycle. Temporary disappearance preserves the old descriptor for recovery.
 - In-place truncation is detected when the size falls below the read offset. A truncate-and-regrow operation between polls on the same inode, multiple rapid rotations, or late writes to an already drained rotated file can lose observations. No polling reader can reconstruct overwritten bytes.
 - Processing is bounded to 1 MiB per cycle, 64 Ki characters per line (oversized lines are discarded), 10000 recent events and 256 identified source labels. Excess source labels become unknown. A burst exceeding these bounds can delay or undercount diagnostics. History files above 8 MiB are discarded with a warning.
-- Windows use observation time, not timestamps parsed from logs. A restart starts fresh alert windows; local history remains diagnostic only.
+- Log entries older than the analysis window are ignored when their timestamp can be read (ISO 8601 with an offset, or local US and French Homebridge formats). Accepted entries use observation time for the rolling windows and history. A restart starts fresh alert windows; local history remains diagnostic only.
 
 ## Troubleshooting
 
@@ -244,7 +244,7 @@ Le plugin reste volontairement simple. Il lit uniquement le fichier de log Homeb
 ## Compatibilité
 
 - Homebridge : `^1.6.0 || ^2.0.0`
-- Node.js : `^22.12.0 || ^24.0.0`
+- Node.js : `>=22.12.0`
 
 Homebridge UI n'est pas obligatoire. Il sert seulement à afficher le schéma de configuration lorsqu'il est installé.
 
@@ -384,7 +384,7 @@ L’historique conserve le schéma version 1 et lit les anciens enregistrements 
 - Au démarrage, les anciennes lignes, y compris une ligne incomplète, sont ignorées. Une rotation termine la lecture de l’ancien descripteur puis lit le nouveau fichier depuis le début au cycle suivant. Une disparition temporaire conserve l’ancien descripteur.
 - Une troncature sur place est détectée si la taille passe sous l’offset lu. Une troncature suivie d’une croissance entre deux lectures sur le même inode, plusieurs rotations rapides ou des écritures tardives dans un fichier déjà drainé peuvent perdre des observations. Les octets écrasés ne peuvent pas être reconstruits.
 - Limites : 1 Mio par cycle, 64 K caractères par ligne (les lignes trop longues sont ignorées), 10000 événements récents et 256 sources identifiées. Les sources supplémentaires deviennent inconnues. Une rafale dépassant ces bornes peut retarder ou sous-estimer les diagnostics. Un historique de plus de 8 Mio est ignoré avec avertissement.
-- Les fenêtres utilisent l’heure d’observation, pas la date contenue dans les logs. Le redémarrage initialise de nouvelles fenêtres d’alerte ; l’historique reste uniquement diagnostique.
+- Les lignes plus anciennes que la fenêtre d’analyse sont ignorées si leur horodatage est reconnu (ISO 8601 avec fuseau, ou formats locaux américain et français de Homebridge). Les fenêtres et l’historique utilisent l’heure d’observation des lignes retenues. Le redémarrage initialise de nouvelles fenêtres d’alerte ; l’historique reste uniquement diagnostique.
 
 ## Dépannage
 

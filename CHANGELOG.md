@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - Fix inode replacement, truncation, incomplete lines, split UTF-8 and overlapping log reads; bound per-cycle work and line buffering.
 - Retry unavailable log files automatically, expose operational/fault state with standard HomeKit characteristics, and drain pending work during shutdown.
@@ -10,7 +10,8 @@
 - Prevent old anomaly evidence from reactivating an alert after quiet reset; retain active alerts during monitoring outages.
 - Preserve the existing global sensor by default; optionally separate warnings into a second sensor with an independent threshold and alert state.
 - Add configuration defaults, real-file integration tests, actual HAP service tests, and bilingual diagnostic/privacy/monitoring-limit documentation.
-- Keep package version, runtime dependencies and declared Node.js/Homebridge ranges unchanged. No publication performed.
+- Ignore log entries whose recognized timestamp is older than the analysis window so replayed entries cannot trigger stale alerts.
+- Declare Node.js 22.12.0 as the minimum supported version, including Node.js 26.
 
 ## 0.1.0-beta.1
 

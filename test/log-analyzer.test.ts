@@ -18,7 +18,7 @@ describe('LogAnalyzer', () => {
   it('counts ERROR lines as anomalies', () => {
     const analyzer = new LogAnalyzer(config);
 
-    const anomaly = analyzer.ingest('[23/07/2026, 10:00:00] [homebridge-test] [ERROR] failed to connect', 1_000);
+    const anomaly = analyzer.ingest('[homebridge-test] [ERROR] failed to connect', 1_000);
 
     expect(anomaly).toMatchObject({
       severity: 'error',
@@ -98,7 +98,21 @@ describe('conservative levels and diagnostics', () => {
 
   it.each(['ERROR: failed', '[ERROR] failed', '\u001b[31mfailed\u001b[39m'])('detects level format %s', (message) => {
     const analyzer = new LogAnalyzer(config);
-    expect(analyzer.ingest(`[11/11/2026, 10:00:00] [homebridge-test] ${message}`)?.severity).toBe('error');
+    expect(analyzer.ingest(`[homebridge-test] ${message}`)?.severity).toBe('error');
+  });
+
+  it.each([
+    '11/12/2026, 12:45:29 PM',
+    '12/11/2026 12:45:29',
+    new Date(2026, 10, 12, 12, 45, 29).toISOString(),
+  ])('ignores stale warnings read again from the log: %s', (timestamp) => {
+    const analyzer = new LogAnalyzer({ ...config, monitorWarnings: true, errorThreshold: 1 });
+    const now = new Date(2026, 10, 12, 13, 37, 26).getTime();
+
+    expect(analyzer.ingest(`[${timestamp}] [Govee] \u001b[33mOld warning\u001b[39m`, now)).toBeUndefined();
+    expect(analyzer.snapshot(now).alertActive).toBe(false);
+    expect(analyzer.ingest('[11/12/2026, 1:37:25 PM] [Govee] [WARN] Current warning', now)?.severity).toBe('warning');
+    expect(analyzer.snapshot(now).alertActive).toBe(true);
   });
 
   it.each(['[WARN] retry', '[WARNING] retry', 'WARNING: retry', '\u001b[33mretry\u001b[39m'])('retains warning diagnostics without enabling global warning alerts: %s', (message) => {

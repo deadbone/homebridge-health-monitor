@@ -62,7 +62,7 @@ export class LogAnalyzer {
       }
     }
     this.prune(now);
-    if (!parsed.severity) {
+    if (!parsed.severity || (parsed.loggedAt !== undefined && parsed.loggedAt < now - this.config.analysisWindowSeconds * 1000)) {
       return undefined;
     }
     // Hash the unredacted message: different credentials/IDs must not silently merge.
@@ -140,7 +140,12 @@ export class LogAnalyzer {
   }
 }
 
-function parseLine(raw: string): { pluginName: string; severity: AnomalySeverity | undefined; message: string } | undefined {
+function parseLine(raw: string): {
+  pluginName: string;
+  severity: AnomalySeverity | undefined;
+  message: string;
+  loggedAt: number | undefined;
+} | undefined {
   let rest = stripVTControlCharacters(raw).trim();
   if (!rest) {
     return undefined;
@@ -177,7 +182,40 @@ function parseLine(raw: string): { pluginName: string; severity: AnomalySeverity
   });
   const severity = level === 'ERROR' || (!level && nativeLevel === '31') ? 'error'
     : level === 'WARN' || level === 'WARNING' || (!level && nativeLevel === '33') ? 'warning' : undefined;
-  return { pluginName, severity, message: rest };
+  return { pluginName, severity, message: rest, loggedAt: severity ? parseLogTimestamp(tokens[0]) : undefined };
+}
+
+function parseLogTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : undefined;
+  }
+  // Homebridge uses toLocaleString() for its native timestamps.
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})(?:\s+(AM|PM))?$/i.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  const [, first, second, yearText, hourText, minuteText, secondText, dayPeriod] = match;
+  // Recognize the native US (12-hour) and French (24-hour) forms.
+  const month = Number(dayPeriod ? first : second);
+  const day = Number(dayPeriod ? second : first);
+  const year = Number(yearText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const seconds = Number(secondText);
+  if (dayPeriod && (hour < 1 || hour > 12)) {
+    return undefined;
+  }
+  const hours = dayPeriod ? hour % 12 + (dayPeriod.toUpperCase() === 'PM' ? 12 : 0) : hour;
+  const date = new Date(year, month - 1, day, hours, minute, seconds);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day
+    || date.getHours() !== hours || date.getMinutes() !== minute || date.getSeconds() !== seconds) {
+    return undefined;
+  }
+  return date.getTime();
 }
 
 export function sanitizeMessage(message: string): string {
