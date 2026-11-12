@@ -8,7 +8,7 @@ import {
   DEFAULT_RESET_AFTER_SECONDS,
   DEFAULT_SCAN_INTERVAL_SECONDS,
 } from './defaults.js';
-import type { NormalizedPlatformConfig } from './types.js';
+import type { NormalizedPlatformConfig, SensorType } from './types.js';
 
 export class ConfigValidationError extends Error {
   public constructor(message: string) {
@@ -34,9 +34,21 @@ export function normalizeConfig(config: PlatformConfig, storagePath: string): No
     pluginErrorThreshold: readInteger(config.pluginErrorThreshold, 'pluginErrorThreshold', 15, 1, 10000),
     reconnectIntervalSeconds: readInteger(config.reconnectIntervalSeconds, 'reconnectIntervalSeconds', 10, 1, 3600),
     separateWarningSensor: readBoolean(config.separateWarningSensor, 'separateWarningSensor', false),
+    errorSensorType: readSensorType(config.errorSensorType, 'errorSensorType'),
+    warningSensorType: readSensorType(config.warningSensorType, 'warningSensorType'),
     warningThreshold: readInteger(config.warningThreshold, 'warningThreshold', 5, 1, 10000),
     historyLimit: readInteger(config.historyLimit, 'historyLimit', 50, 1, 1000),
   };
+}
+
+function readSensorType(value: unknown, fieldName: string): SensorType {
+  if (value === undefined) {
+    return 'contact';
+  }
+  if (value !== 'contact' && value !== 'leak') {
+    throw new ConfigValidationError(`Health Monitor configuration field "${fieldName}" must be "contact" or "leak".`);
+  }
+  return value;
 }
 
 function readString(value: unknown, fieldName: string): string {

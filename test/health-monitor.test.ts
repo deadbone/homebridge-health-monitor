@@ -20,7 +20,7 @@ async function setup(options: { missing?: boolean; separate?: boolean; badHistor
   if (options.badHistory) {
     await mkdir(historyPath);
   }
-  const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } as unknown as Logging;
+  const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } as unknown as Logging;
   const config = {
     ...normalizeConfig({ platform: 'HealthMonitor' }, dir),
     logFile: path, scanIntervalSeconds: 0.01, reconnectIntervalSeconds: 0.02,
@@ -41,6 +41,24 @@ afterEach(async () => {
 });
 
 describe('HealthMonitor integration', () => {
+  it('continues publishing status when a sensor update throws', async () => {
+    const { monitor, log, path } = await setup();
+    monitor.onStatus(() => {
+      throw new Error('accessory unavailable');
+    });
+    const otherSensor = vi.fn();
+    monitor.onStatus(otherSensor);
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(otherSensor).toHaveBeenLastCalledWith(expect.objectContaining({ monitoring: 'OPERATIONAL' }));
+    });
+    await appendFile(path, '[homebridge-test] [ERROR] failed\n');
+    await vi.waitFor(() => {
+      expect(otherSensor).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }));
+    });
+    expect(log.error).toHaveBeenCalledWith('Health Monitor could not publish sensor status: %s', 'Error: accessory unavailable');
+  });
+
   it('retries a missing file, rate limits warnings and reads lines when it appears', async () => {
     const { monitor, path, statuses, log } = await setup({ missing: true });
     monitor.start();

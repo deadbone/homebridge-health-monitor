@@ -19,7 +19,7 @@ describe('normalizeConfig', () => {
       errorThreshold: 3,
       monitorWarnings: false,
       debug: false,
-      groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 10, historyLimit: 50, separateWarningSensor: false, warningThreshold: 5,
+      groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 10, historyLimit: 50, separateWarningSensor: false, errorSensorType: 'contact', warningSensorType: 'contact', warningThreshold: 5,
     });
   });
 
@@ -68,5 +68,12 @@ describe('diagnostic configuration', () => {
     expect(() => normalizeConfig({ platform: 'HealthMonitor', separateWarningSensor: 'true' }, '/tmp')).toThrow(ConfigValidationError);
     expect(() => normalizeConfig({ platform: 'HealthMonitor', groupRepeatedErrors: 1 }, '/tmp')).toThrow(ConfigValidationError);
     expect(normalizeConfig({ platform: 'HealthMonitor', separateWarningSensor: true, warningThreshold: 8 }, '/tmp')).toMatchObject({ separateWarningSensor: true, warningThreshold: 8 });
+  });
+
+  it('accepts independent sensor types and rejects unsupported values', () => {
+    const config = normalizeConfig({ platform: 'HealthMonitor', errorSensorType: 'leak', warningSensorType: 'contact' }, '/tmp');
+    expect(config).toMatchObject({ errorSensorType: 'leak', warningSensorType: 'contact' });
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', errorSensorType: 'motion' }, '/tmp')).toThrow(ConfigValidationError);
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', warningSensorType: null }, '/tmp')).toThrow(ConfigValidationError);
   });
 });

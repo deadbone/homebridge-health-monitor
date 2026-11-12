@@ -1,3 +1,5 @@
+export type SensorType = 'contact' | 'leak';
+
 export interface NormalizedPlatformConfig {
   readonly name: string;
   readonly logFile: string;
@@ -13,5 +15,7 @@ export interface NormalizedPlatformConfig {
   readonly reconnectIntervalSeconds: number;
   readonly historyLimit: number;
   readonly separateWarningSensor: boolean;
+  readonly errorSensorType: SensorType;
+  readonly warningSensorType: SensorType;
   readonly warningThreshold: number;
 }

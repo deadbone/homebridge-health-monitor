@@ -75,7 +75,11 @@ export class HealthMonitor {
     this.lastWarningAt = undefined;
     this.monitoring = 'RECONNECTING';
     this.emit();
-    await this.history.load();
+    try {
+      await this.history.load();
+    } catch (error) {
+      this.log.warn('Health Monitor could not initialize anomaly history: %s', String(error));
+    }
     if (!this.current(generation)) {
       return;
     }
@@ -215,8 +219,13 @@ export class HealthMonitor {
   }
 
   private emit(snapshot = this.analyzer.snapshot(Date.now(), this.monitoring === 'OPERATIONAL')): void {
+    const status = { active: this.active, warningActive: this.warningActive, monitoring: this.monitoring, snapshot };
     for (const listener of this.listeners) {
-      listener({ active: this.active, warningActive: this.warningActive, monitoring: this.monitoring, snapshot });
+      try {
+        listener(status);
+      } catch (error) {
+        this.log.error('Health Monitor could not publish sensor status: %s', String(error));
+      }
     }
   }
 }

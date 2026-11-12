@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+- Use HomeKit contact sensors by default for the main alert and the optional separate warning alert. Each can independently use a leak sensor, whose notifications may sound during Do Not Disturb.
+- **Upgrade from 0.1.x:** Homebridge replaces existing leak sensors at the first restart unless the corresponding `errorSensorType` or `warningSensorType` is set to `leak` beforehand. After a replacement, set up activity notifications again and recreate automations tied to the old sensor.
+- Keep automatic reset after a quiet period for both sensor types.
+- Catch and log accessory update and history initialization errors so monitoring can continue.
+- Build before packing so npm installs the published plugin without an install lifecycle script.
+
+**Mise à jour depuis 0.1.x.** Contact devient le type par défaut pour les erreurs et les avertissements. Au premier redémarrage, Homebridge remplace les anciens capteurs de fuite. Pour conserver un capteur et ses automatisations, choisissez Fuite pour ce capteur avant ce redémarrage. Une notification de fuite peut sonner même en mode « Ne pas déranger ».
+
 ## 0.1.0
 
 - Fix inode replacement, truncation, incomplete lines, split UTF-8 and overlapping log reads; bound per-cycle work and line buffering.

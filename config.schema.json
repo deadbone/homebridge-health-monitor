@@ -27,7 +27,17 @@
         "default": 3,
         "minimum": 1,
         "maximum": 10000,
-        "description": "Number of counted anomalies inside the analysis window required to trigger the Leak Sensor."
+        "description": "Number of counted anomalies inside the analysis window required to trigger the main sensor."
+      },
+      "errorSensorType": {
+        "title": "Main Sensor Type (Errors)",
+        "type": "string",
+        "default": "contact",
+        "oneOf": [
+          { "title": "Contact sensor (default)", "enum": ["contact"] },
+          { "title": "Leak sensor (may sound during Do Not Disturb)", "enum": ["leak"] }
+        ],
+        "description": "A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous leak sensor and its HomeKit automations."
       },
       "analysisWindowSeconds": {
         "title": "Analysis Window",
@@ -43,7 +53,7 @@
         "default": 600,
         "minimum": 10,
         "maximum": 86400,
-        "description": "Number of seconds without a new anomaly before the Leak Sensor returns to normal."
+        "description": "Number of seconds without a new counted anomaly before the corresponding sensor returns to normal."
       },
       "monitorWarnings": {
         "title": "Monitor WARN Lines",
@@ -106,7 +116,17 @@
         "title": "Separate Warning Sensor",
         "type": "boolean",
         "default": false,
-        "description": "Expose an additional Leak Sensor for warnings. The existing sensor then counts errors only. Warning monitoring is enabled for the warning sensor independently of monitorWarnings."
+        "description": "Expose an additional sensor for warnings. The main sensor then counts errors only. Warning monitoring is enabled for the warning sensor independently of monitorWarnings."
+      },
+      "warningSensorType": {
+        "title": "Separate Warning Sensor Type",
+        "type": "string",
+        "default": "contact",
+        "oneOf": [
+          { "title": "Contact sensor (default)", "enum": ["contact"] },
+          { "title": "Leak sensor (may sound during Do Not Disturb)", "enum": ["leak"] }
+        ],
+        "description": "Applies only when Separate Warning Sensor is enabled. A type change replaces the accessory after restart. Select Leak before the first restart after upgrading to keep the previous warning leak sensor and its HomeKit automations."
       },
       "warningThreshold": {
         "title": "Warning Sensor Threshold",

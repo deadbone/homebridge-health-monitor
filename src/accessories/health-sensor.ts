@@ -1,15 +1,20 @@
-import type { PlatformAccessory, Service } from 'homebridge';
+import type { Characteristic, PlatformAccessory, Service, WithUUID } from 'homebridge';
+import type { SensorType } from '../config/types.js';
 import type { MonitoringState } from '../services/health-monitor.js';
 import type { HealthMonitorPlatform } from '../platform.js';
 
-export class HealthLeakSensorAccessory {
+export class HealthSensorAccessory {
   private readonly service: Service;
+  private readonly detection: WithUUID<new () => Characteristic>;
+  private readonly activeValue: number;
+  private readonly normalValue: number;
 
   public constructor(
     private readonly platform: HealthMonitorPlatform,
     private readonly accessory: PlatformAccessory,
     displayName: string,
-    role = 'health-leak-sensor',
+    role: string,
+    type: SensorType,
   ) {
     const { Characteristic, Service } = this.platform.api.hap;
     this.accessory
@@ -18,7 +23,17 @@ export class HealthLeakSensorAccessory {
       .setCharacteristic(Characteristic.Model, 'Homebridge Health Monitor')
       .setCharacteristic(Characteristic.SerialNumber, role);
 
-    this.service = this.accessory.getService(Service.LeakSensor) ?? this.accessory.addService(Service.LeakSensor, displayName);
+    const sensorService = type === 'leak' ? Service.LeakSensor : Service.ContactSensor;
+    this.service = this.accessory.getService(sensorService) ?? this.accessory.addService(sensorService, displayName);
+    if (type === 'leak') {
+      this.detection = Characteristic.LeakDetected;
+      this.activeValue = Characteristic.LeakDetected.LEAK_DETECTED;
+      this.normalValue = Characteristic.LeakDetected.LEAK_NOT_DETECTED;
+    } else {
+      this.detection = Characteristic.ContactSensorState;
+      this.activeValue = Characteristic.ContactSensorState.CONTACT_NOT_DETECTED;
+      this.normalValue = Characteristic.ContactSensorState.CONTACT_DETECTED;
+    }
     this.service.setCharacteristic(Characteristic.Name, displayName);
     this.update(false, 'RECONNECTING');
   }
@@ -26,8 +41,8 @@ export class HealthLeakSensorAccessory {
   public update(active: boolean, monitoring: MonitoringState = 'OPERATIONAL'): void {
     const { Characteristic } = this.platform.api.hap;
     this.service.updateCharacteristic(
-      Characteristic.LeakDetected,
-      active ? Characteristic.LeakDetected.LEAK_DETECTED : Characteristic.LeakDetected.LEAK_NOT_DETECTED,
+      this.detection,
+      active ? this.activeValue : this.normalValue,
     );
     this.service.updateCharacteristic(Characteristic.StatusActive, monitoring === 'OPERATIONAL');
     this.service.updateCharacteristic(
