@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Clarify the contact sensor states in Homebridge settings for both errors and warnings. Closed means no alert, and open means an active alert. Eve displays a closed sensor as “Contact Detected: Yes”.
+
+Dans Eve, **« Contact détecté : Oui »** signifie que le capteur est fermé et qu’aucune alerte n’est active. La précision figure dans les réglages Homebridge des deux capteurs.
+
 ## 0.2.0
 
 - Use HomeKit contact sensors by default for the main alert and the optional separate warning alert. Each can independently use a leak sensor, whose notifications may sound during Do Not Disturb.
