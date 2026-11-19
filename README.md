@@ -68,11 +68,20 @@ npm run build
   "errorSensorType": "contact",
   "separateWarningSensor": false,
   "warningSensorType": "contact",
-  "warningThreshold": 5
+  "warningThreshold": 5,
+  "exposeTestSwitches": false
 }
 ```
 
 If `logFile` is omitted, the plugin uses `homebridge.log` in the Homebridge storage directory.
+
+## Test an alert
+
+Enable **Expose HomeKit Test Switches** in Homebridge UI (or set `exposeTestSwitches` to `true`), save, and restart Homebridge or the child bridge that runs the plugin. This adds **Test ERROR** and **Test WARN** to Apple Home. The option is off by default. Turning it off removes both switches at the next restart.
+
+Turn on either switch to run its test while log monitoring is operational. The switch turns itself off after one second. **Test ERROR** activates the main sensor. **Test WARN** activates the separate warning sensor if enabled, or the main sensor if **Monitor WARN Lines** is enabled. If both warning options are off or log monitoring is unavailable, Homebridge logs why the test could not run.
+
+The tests use the configured thresholds and can trigger HomeKit notifications and automations. Simulated events stay in memory, and sensors return to normal after the usual quiet period. Wait for the sensor to return to normal before testing another notification on that sensor.
 
 ## HomeKit Accessory
 
@@ -298,11 +307,20 @@ npm run build
   "errorSensorType": "contact",
   "separateWarningSensor": false,
   "warningSensorType": "contact",
-  "warningThreshold": 5
+  "warningThreshold": 5,
+  "exposeTestSwitches": false
 }
 ```
 
 Si `logFile` est omis, le plugin utilise `homebridge.log` dans le répertoire de stockage Homebridge.
+
+## Tester une alerte
+
+Activez **Expose HomeKit Test Switches** dans Homebridge UI (ou réglez `exposeTestSwitches` sur `true`), enregistrez, puis redémarrez Homebridge ou le pont enfant qui exécute le plugin. Les interrupteurs **Test ERROR** et **Test WARN** apparaissent dans Maison. L’option est désactivée par défaut. La décocher retire les deux interrupteurs au prochain redémarrage.
+
+Activez un interrupteur pour lancer son test lorsque la surveillance du journal est opérationnelle. Il revient automatiquement sur Arrêt après une seconde. **Test ERROR** déclenche le capteur principal. **Test WARN** déclenche le capteur d’avertissements séparé s’il est activé, ou le capteur principal si **Monitor WARN Lines** est activé. Si les deux réglages d’avertissement sont désactivés ou si la surveillance est indisponible, Homebridge indique dans son journal pourquoi le test n’a pas pu se lancer.
+
+Les tests utilisent les seuils configurés et peuvent déclencher les notifications et les automatisations HomeKit. Les événements simulés restent en mémoire et le capteur revient à son état normal après le délai habituel. Attendez ce retour à la normale pour tester une nouvelle notification sur le même capteur.
 
 ## Accessoire HomeKit
 

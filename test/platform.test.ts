@@ -147,6 +147,75 @@ describe('HealthMonitorPlatform', () => {
   });
 });
 
+describe('HomeKit test switches', () => {
+  it('restores or adds both opt-in switches, resets them after use, and removes them when disabled', async () => {
+    const hap = await import('@homebridge/hap-nodejs');
+    const { HealthMonitor } = await import('../src/services/health-monitor.js');
+    const start = vi.spyOn(HealthMonitor.prototype, 'start').mockImplementation(() => undefined);
+    const runTest = vi.spyOn(HealthMonitor.prototype, 'runTest').mockReturnValue(true);
+    const handlers = new Map<string, () => void>();
+    class NewAccessory extends hap.Accessory {
+      public context = {};
+    }
+    const api = {
+      user: { storagePath: () => '/tmp/homebridge' },
+      hap,
+      on: (event: string, handler: () => void) => handlers.set(event, handler),
+      platformAccessory: NewAccessory,
+      registerPlatformAccessories: vi.fn(),
+      updatePlatformAccessories: vi.fn(),
+      unregisterPlatformAccessories: vi.fn(),
+    } as unknown as API;
+    const cachedError = new NewAccessory('Old Test ERROR', hap.uuid.generate('homebridge-health-monitor:health-error-test-switch'));
+    cachedError.addService(hap.Service.Switch).updateCharacteristic(hap.Characteristic.On, true);
+    vi.useFakeTimers();
+    try {
+      const platform = new HealthMonitorPlatform(makeLog(), { platform: 'HealthMonitor', exposeTestSwitches: true }, api);
+      platform.configureAccessory(cachedError as unknown as PlatformAccessory);
+      handlers.get('didFinishLaunching')?.();
+      const switches = [...platform.accessories.values()].filter((accessory) => accessory.getService(hap.Service.Switch));
+      expect(switches.map((accessory) => accessory.displayName)).toEqual(['Test ERROR', 'Test WARN']);
+      expect(api.updatePlatformAccessories).toHaveBeenCalledWith([cachedError]);
+      expect(runTest).not.toHaveBeenCalled();
+
+      for (const [name, severity] of [['Test ERROR', 'error'], ['Test WARN', 'warning']] as const) {
+        const on = switches.find((accessory) => accessory.displayName === name)
+          ?.getService(hap.Service.Switch)?.getCharacteristic(hap.Characteristic.On);
+        if (!on) {
+          throw new Error(`Missing On characteristic for ${name}`);
+        }
+        expect(on.value).toBe(false);
+        runTest.mockReturnValueOnce(false);
+        await expect(on.handleSetRequest(true)).rejects.toBe(hap.HAPStatus.NOT_ALLOWED_IN_CURRENT_STATE);
+        expect(on.value).toBe(false);
+        runTest.mockClear();
+
+        await on.handleSetRequest(true);
+        expect(runTest).toHaveBeenCalledWith(severity);
+        expect(on.value).toBe(true);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(on.value).toBe(false);
+        await on.handleSetRequest(false);
+        expect(runTest).toHaveBeenCalledOnce();
+      }
+
+      const disabled = new HealthMonitorPlatform(makeLog(), { platform: 'HealthMonitor', exposeTestSwitches: false }, api);
+      for (const accessory of platform.accessories.values()) {
+        disabled.configureAccessory(accessory);
+      }
+      vi.mocked(api.registerPlatformAccessories).mockClear();
+      handlers.get('didFinishLaunching')?.();
+      const removed = vi.mocked(api.unregisterPlatformAccessories).mock.calls.flatMap(([, , accessories]) => accessories);
+      expect(removed).toEqual(switches);
+      expect(api.registerPlatformAccessories).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      start.mockRestore();
+      runTest.mockRestore();
+    }
+  });
+});
+
 describe('sensor registration on upgrade', () => {
   it.each([
     ['keep both leak sensors', true, 'leak', 'leak', false, false],

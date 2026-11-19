@@ -19,6 +19,7 @@ describe('normalizeConfig', () => {
       errorThreshold: 3,
       monitorWarnings: false,
       debug: false,
+      exposeTestSwitches: false,
       groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 10, historyLimit: 50, separateWarningSensor: false, errorSensorType: 'contact', warningSensorType: 'contact', warningThreshold: 5,
     });
   });
@@ -60,6 +61,11 @@ describe('normalizeConfig', () => {
 });
 
 describe('diagnostic configuration', () => {
+  it('accepts a boolean opt-in for the HomeKit test switches', () => {
+    expect(normalizeConfig({ platform: 'HealthMonitor', exposeTestSwitches: true }, '/tmp').exposeTestSwitches).toBe(true);
+    expect(() => normalizeConfig({ platform: 'HealthMonitor', exposeTestSwitches: 'true' }, '/tmp')).toThrow(ConfigValidationError);
+  });
+
   it.each(['repeatWindowSeconds', 'pluginErrorThreshold', 'reconnectIntervalSeconds', 'historyLimit', 'warningThreshold'])('validates %s bounds', (field) => {
     expect(() => normalizeConfig({ platform: 'HealthMonitor', [field]: 0 }, '/tmp')).toThrow(ConfigValidationError);
     expect(() => normalizeConfig({ platform: 'HealthMonitor', [field]: Infinity }, '/tmp')).toThrow(ConfigValidationError);

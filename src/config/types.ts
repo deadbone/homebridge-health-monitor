@@ -18,4 +18,5 @@ export interface NormalizedPlatformConfig {
   readonly errorSensorType: SensorType;
   readonly warningSensorType: SensorType;
   readonly warningThreshold: number;
+  readonly exposeTestSwitches: boolean;
 }

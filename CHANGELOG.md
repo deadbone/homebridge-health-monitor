@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Add optional **Test ERROR** and **Test WARN** switches in HomeKit. Each runs a simulation on demand using the configured sensor threshold and turns off automatically. Simulated events stay in memory.
+
+Activez **Expose HomeKit Test Switches** dans Homebridge UI pour ajouter les deux interrupteurs dans Maison. L’option est désactivée par défaut.
+
 ## 0.2.1
 
 - Clarify the contact sensor states in Homebridge settings for both errors and warnings. Closed means no alert, and open means an active alert. Eve displays a closed sensor as “Contact Detected: Yes”.

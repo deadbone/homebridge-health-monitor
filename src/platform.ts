@@ -6,10 +6,15 @@ import { ConfigValidationError, normalizeConfig } from './config/validation.js';
 import type { NormalizedPlatformConfig, SensorType } from './config/types.js';
 import { HealthMonitor } from './services/health-monitor.js';
 import { HistoryStore } from './services/history-store.js';
+import type { AnomalySeverity } from './services/log-analyzer.js';
 import { ACCESSORY_DISPLAY_NAME, ACCESSORY_UUID_NAMESPACE, PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 const ACCESSORY_ROLE = 'health-leak-sensor';
 const WARNING_ROLE = 'health-warning-sensor';
+const TEST_SWITCHES = [
+  { role: 'health-error-test-switch', displayName: 'Test ERROR', severity: 'error' },
+  { role: 'health-warning-test-switch', displayName: 'Test WARN', severity: 'warning' },
+] as const;
 
 export class HealthMonitorPlatform implements DynamicPlatformPlugin {
   public readonly accessories = new Map<string, PlatformAccessory>();
@@ -71,6 +76,11 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     this.accessories.set(accessory.UUID, accessory);
     if (!this.configData) {
       try {
+        const testSwitch = TEST_SWITCHES.find(({ role }) => role === accessory.context.role);
+        if (testSwitch) {
+          this.configureTestSwitch(accessory, testSwitch.severity);
+          return;
+        }
         const { Service } = this.api.hap;
         const type = accessory.getService(Service.ContactSensor) ? 'contact' : 'leak';
         const role = accessory.context.role === WARNING_ROLE ? WARNING_ROLE : ACCESSORY_ROLE;
@@ -91,6 +101,17 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
     if (this.configData.separateWarningSensor) {
       expectedUUIDs.add(this.registerSensor(WARNING_ROLE, 'Homebridge Health Warnings', this.configData.warningSensorType).UUID);
     }
+    if (this.configData.exposeTestSwitches) {
+      for (const { role, displayName, severity } of TEST_SWITCHES) {
+        const uuid = this.api.hap.uuid.generate(`${ACCESSORY_UUID_NAMESPACE}:${role}`);
+        const accessory = this.accessories.get(uuid) ?? new this.api.platformAccessory(displayName, uuid);
+        accessory.displayName = displayName;
+        accessory.context.role = role;
+        this.configureTestSwitch(accessory, severity);
+        this.publishAccessory(accessory);
+        expectedUUIDs.add(uuid);
+      }
+    }
 
     for (const [uuid, accessory] of this.accessories) {
       if (!expectedUUIDs.has(uuid)) {
@@ -98,6 +119,32 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
         this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.delete(uuid);
       }
+    }
+  }
+
+  private configureTestSwitch(accessory: PlatformAccessory, severity: AnomalySeverity): void {
+    const { Characteristic, Service, HapStatusError } = this.api.hap;
+    const service = accessory.getService(Service.Switch) ?? accessory.addService(Service.Switch, accessory.displayName);
+    service.setCharacteristic(Characteristic.Name, accessory.displayName);
+    const on = service.getCharacteristic(Characteristic.On);
+    on.updateValue(false);
+    let resetTimer: NodeJS.Timeout | undefined;
+    on.onSet((value) => {
+      const pressed = value === true;
+      if (pressed && !this.monitor?.runTest(severity)) {
+        throw new HapStatusError(this.api.hap.HAPStatus.NOT_ALLOWED_IN_CURRENT_STATE);
+      }
+      clearTimeout(resetTimer);
+      resetTimer = pressed ? setTimeout(() => on.updateValue(false), 1000).unref() : undefined;
+    });
+  }
+
+  private publishAccessory(accessory: PlatformAccessory): void {
+    if (this.accessories.has(accessory.UUID)) {
+      this.api.updatePlatformAccessories([accessory]);
+    } else {
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      this.accessories.set(accessory.UUID, accessory);
     }
   }
 
@@ -114,18 +161,11 @@ export class HealthMonitorPlatform implements DynamicPlatformPlugin {
   private registerSensor(role: string, displayName: string, type: SensorType): PlatformAccessory {
     // Keep the legacy UUID for explicitly configured leak sensors.
     const uuid = this.api.hap.uuid.generate(`${ACCESSORY_UUID_NAMESPACE}:${role}${type === 'contact' ? ':contact' : ''}`);
-    const existingAccessory = this.accessories.get(uuid);
-    const accessory = existingAccessory ?? new this.api.platformAccessory(displayName, uuid);
+    const accessory = this.accessories.get(uuid) ?? new this.api.platformAccessory(displayName, uuid);
     accessory.displayName = displayName;
     accessory.context.role = role;
     const sensor = new HealthSensorAccessory(this, accessory, displayName, role, type);
-
-    if (!existingAccessory) {
-      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      this.accessories.set(uuid, accessory);
-    } else {
-      this.api.updatePlatformAccessories([accessory]);
-    }
+    this.publishAccessory(accessory);
 
     if (role === ACCESSORY_ROLE) {
       this.sensor = sensor;

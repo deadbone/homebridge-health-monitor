@@ -11,6 +11,7 @@ const config: NormalizedPlatformConfig = {
   errorThreshold: 3,
   monitorWarnings: false,
   debug: false,
+  exposeTestSwitches: false,
   groupRepeatedErrors: true, repeatWindowSeconds: 120, pluginErrorThreshold: 15, reconnectIntervalSeconds: 1, historyLimit: 50, separateWarningSensor: false, errorSensorType: 'contact', warningSensorType: 'contact', warningThreshold: 5,
 };
 

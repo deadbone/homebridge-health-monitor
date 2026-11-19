@@ -1,6 +1,6 @@
 import type { Logging } from 'homebridge';
 import type { NormalizedPlatformConfig } from '../config/types.js';
-import { LogAnalyzer, type HealthSnapshot, type LogAnomaly } from './log-analyzer.js';
+import { LogAnalyzer, type AnomalySeverity, type HealthSnapshot, type LogAnomaly } from './log-analyzer.js';
 import { HistoryStore } from './history-store.js';
 import { LogTail } from './log-tail.js';
 
@@ -17,7 +17,7 @@ export class HealthMonitor {
   private readonly analyzer: LogAnalyzer;
   private readonly tail: LogTail;
   private readonly listeners: StatusListener[] = [];
-  private pollTimer: NodeJS.Timeout | undefined;
+  private nextPoll: { timer: NodeJS.Timeout; at: number } | undefined;
   private task: Promise<void> = Promise.resolve();
   private generation = 0;
   private running = false;
@@ -38,6 +38,33 @@ export class HealthMonitor {
     this.listeners.push(listener);
   }
 
+  public runTest(severity: AnomalySeverity): boolean {
+    const warning = severity === 'warning';
+    const level = warning ? 'WARN' : 'ERROR';
+    if (this.monitoring !== 'OPERATIONAL') {
+      this.log.info('Health Monitor skipped Test %s because log monitoring is %s.', level, this.monitoring);
+      return false;
+    }
+    if (warning && !this.config.separateWarningSensor && !this.config.monitorWarnings) {
+      this.log.info('Health Monitor skipped Test WARN. Enable Monitor WARN Lines or Separate Warning Sensor.');
+      return false;
+    }
+
+    const count = warning && this.config.separateWarningSensor ? this.config.warningThreshold : this.config.errorThreshold;
+    const source = this.config.name.toLowerCase() === 'health monitor test' ? 'Health Monitor Simulation' : 'Health Monitor Test';
+    const line = `[${source}] [${level}] Simulated ${level}`;
+    const now = Date.now();
+    for (let index = 0; index < count; index++) {
+      this.ingest(line, now);
+    }
+    this.updateAlerts(false);
+    if (this.nextPoll) {
+      this.schedule(this.generation);
+    }
+    this.log.info('Health Monitor ran Test %s with %d simulated event(s).', level, count);
+    return true;
+  }
+
   public start(): void {
     if (this.running) {
       return;
@@ -50,8 +77,8 @@ export class HealthMonitor {
   public stop(): Promise<void> {
     this.running = false;
     this.generation++;
-    clearTimeout(this.pollTimer);
-    this.pollTimer = undefined;
+    clearTimeout(this.nextPoll?.timer);
+    this.nextPoll = undefined;
     this.monitoring = 'DISABLED';
     this.emit();
     this.task = this.task.then(() => this.tail.close()).catch(() => {
@@ -104,20 +131,28 @@ export class HealthMonitor {
     if (!this.current(generation)) {
       return;
     }
+    const now = Date.now();
     let seconds = this.monitoring === 'OPERATIONAL' ? this.config.scanIntervalSeconds : this.config.reconnectIntervalSeconds;
     if (this.monitoring === 'OPERATIONAL') {
       for (const timestamp of [this.lastCountedAt, this.lastWarningAt]) {
         if (timestamp !== undefined) {
-          const remaining = this.config.resetAfterSeconds - (Date.now() - timestamp) / 1000;
+          const remaining = this.config.resetAfterSeconds - (now - timestamp) / 1000;
           if (remaining > 0) {
             seconds = Math.min(seconds, remaining);
           }
         }
       }
     }
-    this.pollTimer = setTimeout(() => {
+    const at = now + seconds * 1000;
+    if (this.nextPoll && this.nextPoll.at <= at) {
+      return;
+    }
+    clearTimeout(this.nextPoll?.timer);
+    const timer = setTimeout(() => {
+      this.nextPoll = undefined;
       this.task = this.poll(generation);
     }, seconds * 1000);
+    this.nextPoll = { timer, at };
   }
 
   private async poll(generation: number): Promise<void> {
@@ -137,17 +172,10 @@ export class HealthMonitor {
       this.monitoring = 'OPERATIONAL';
       const anomalies: LogAnomaly[] = [];
       for (const line of lines) {
-        const anomaly = this.analyzer.ingest(line);
-        if (!anomaly) {
-          continue;
+        const anomaly = this.ingest(line);
+        if (anomaly) {
+          anomalies.push(anomaly);
         }
-        if (anomaly.severity === 'error' || (this.config.monitorWarnings && !this.config.separateWarningSensor)) {
-          this.lastCountedAt = anomaly.timestamp;
-        }
-        if (anomaly.severity === 'warning') {
-          this.lastWarningAt = anomaly.timestamp;
-        }
-        anomalies.push(anomaly);
       }
       this.updateAlerts();
       if (anomalies.length > 0 || this.historyFailed) {
@@ -173,6 +201,20 @@ export class HealthMonitor {
     }
   }
 
+  private ingest(line: string, now?: number): LogAnomaly | undefined {
+    const anomaly = this.analyzer.ingest(line, now);
+    if (!anomaly) {
+      return undefined;
+    }
+    if (anomaly.severity === 'error' || (this.config.monitorWarnings && !this.config.separateWarningSensor)) {
+      this.lastCountedAt = anomaly.timestamp;
+    }
+    if (anomaly.severity === 'warning') {
+      this.lastWarningAt = anomaly.timestamp;
+    }
+    return anomaly;
+  }
+
   private unavailable(): void {
     if (!this.readFailed) {
       this.log.warn('Health Monitor log monitoring unavailable; reconnecting automatically.');
@@ -183,11 +225,11 @@ export class HealthMonitor {
     this.emit();
   }
 
-  private updateAlerts(): void {
+  private updateAlerts(afterLogRead = true): void {
     const now = Date.now();
     const snapshot = this.analyzer.snapshot(now);
     const quiet = this.lastCountedAt !== undefined && now - this.lastCountedAt >= this.config.resetAfterSeconds * 1000;
-    if (quiet) {
+    if (quiet && afterLogRead) {
       if (this.active) {
         this.log.info('Health Monitor alert reset after %d second(s) without a new anomaly.', this.config.resetAfterSeconds);
       }
@@ -197,19 +239,19 @@ export class HealthMonitor {
         this.analyzer.reset('warning');
       }
       this.lastCountedAt = undefined;
-    } else if (snapshot.alertActive && !this.active) {
+    } else if (!quiet && snapshot.alertActive && !this.active) {
       this.active = true;
       this.log.warn('Health Monitor anomaly alert active.');
     }
     const warningQuiet = this.lastWarningAt !== undefined && now - this.lastWarningAt >= this.config.resetAfterSeconds * 1000;
-    if (warningQuiet) {
+    if (warningQuiet && afterLogRead) {
       if (this.warningActive) {
         this.log.info('Health Monitor warning alert reset after the quiet period.');
       }
       this.warningActive = false;
       this.analyzer.reset('warning');
       this.lastWarningAt = undefined;
-    } else if (this.config.separateWarningSensor && snapshot.anomalies.filter((item) => item.severity === 'warning').length >= this.config.warningThreshold) {
+    } else if (!warningQuiet && this.config.separateWarningSensor && snapshot.anomalies.filter((item) => item.severity === 'warning').length >= this.config.warningThreshold) {
       if (!this.warningActive) {
         this.log.warn('Health Monitor warning alert active.');
       }

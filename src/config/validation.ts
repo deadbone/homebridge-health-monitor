@@ -38,6 +38,7 @@ export function normalizeConfig(config: PlatformConfig, storagePath: string): No
     warningSensorType: readSensorType(config.warningSensorType, 'warningSensorType'),
     warningThreshold: readInteger(config.warningThreshold, 'warningThreshold', 5, 1, 10000),
     historyLimit: readInteger(config.historyLimit, 'historyLimit', 50, 1, 1000),
+    exposeTestSwitches: readBoolean(config.exposeTestSwitches, 'exposeTestSwitches', false),
   };
 }
 

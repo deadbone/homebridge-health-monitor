@@ -3,13 +3,20 @@ import { appendFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { NormalizedPlatformConfig } from '../src/config/types.js';
 import { normalizeConfig } from '../src/config/validation.js';
 import { HealthMonitor, type HealthStatus } from '../src/services/health-monitor.js';
 import { HistoryStore } from '../src/services/history-store.js';
 
 const dirs: string[] = [];
 const monitors: HealthMonitor[] = [];
-async function setup(options: { missing?: boolean; separate?: boolean; badHistory?: boolean; threshold?: number } = {}) {
+async function setup(options: {
+  missing?: boolean;
+  separate?: boolean;
+  badHistory?: boolean;
+  threshold?: number;
+  config?: Partial<NormalizedPlatformConfig>;
+} = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'health-monitor-'));
   dirs.push(dir);
   const path = join(dir, 'log');
@@ -26,6 +33,7 @@ async function setup(options: { missing?: boolean; separate?: boolean; badHistor
     logFile: path, scanIntervalSeconds: 0.01, reconnectIntervalSeconds: 0.02,
     resetAfterSeconds: 0.15, errorThreshold: options.threshold ?? 1,
     separateWarningSensor: options.separate ?? false, warningThreshold: 2,
+    ...options.config,
   };
   const history = new HistoryStore(historyPath, log);
   const monitor = new HealthMonitor(config, log, history);
@@ -41,6 +49,96 @@ afterEach(async () => {
 });
 
 describe('HealthMonitor integration', () => {
+  it('accepts an ERROR test on demand once the log is readable and keeps its entries out of history', async () => {
+    const { monitor, path, history, statuses } = await setup({
+      missing: true,
+      threshold: 3,
+      config: { name: 'Health Monitor Test' },
+    });
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)).toMatchObject({ monitoring: 'UNAVAILABLE', active: false });
+    });
+    expect(monitor.runTest('error')).toBe(false);
+    await writeFile(path, '[homebridge-test] [WARN] actual warning\n');
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)).toMatchObject({ monitoring: 'OPERATIONAL', active: false });
+    });
+    expect(monitor.runTest('error')).toBe(true);
+    expect(statuses.at(-1)).toMatchObject({ active: true, warningActive: false, snapshot: { anomalyCount: 3 } });
+    expect(await readFile(path, 'utf8')).toBe('[homebridge-test] [WARN] actual warning\n');
+    await vi.waitFor(async () => {
+      expect(await history.load()).toEqual([expect.objectContaining({ message: 'actual warning' })]);
+    });
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.active).toBe(false);
+    });
+  });
+
+  it('resets a test alert before a longer log scan interval elapses', async () => {
+    const { monitor, statuses } = await setup({ config: { scanIntervalSeconds: 5 } });
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.monitoring).toBe('OPERATIONAL');
+    });
+    expect(monitor.runTest('error')).toBe(true);
+    expect(statuses.at(-1)?.active).toBe(true);
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.active).toBe(false);
+    });
+  });
+
+  it.each([false, true])('routes an on-demand WARN test with separateWarningSensor=%s', async (separate) => {
+    const { monitor, statuses } = await setup({
+      separate,
+      threshold: 3,
+      config: { monitorWarnings: !separate },
+    });
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.monitoring).toBe('OPERATIONAL');
+    });
+    expect(monitor.runTest('warning')).toBe(true);
+    const testAlert = statuses.at(-1);
+    expect(testAlert).toMatchObject({ active: !separate, warningActive: separate });
+    expect(testAlert?.snapshot.anomalies.map((anomaly) => anomaly.severity)).toEqual(
+      Array.from({ length: separate ? 2 : 3 }, () => 'warning'),
+    );
+  });
+
+  it('keeps the main sensor active during a WARN test until a log scan confirms its reset', async () => {
+    const { monitor, path, statuses } = await setup({ separate: true });
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.monitoring).toBe('OPERATIONAL');
+    });
+    await appendFile(path, '[homebridge-test] [ERROR] real error\n');
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.active).toBe(true);
+    });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000);
+    try {
+      expect(monitor.runTest('warning')).toBe(true);
+      expect(statuses.at(-1)).toMatchObject({ active: true, warningActive: true });
+    } finally {
+      clock.mockRestore();
+    }
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.active).toBe(false);
+    });
+  });
+
+  it('rejects a WARN test and explains why when both warning options are off', async () => {
+    const { monitor, statuses, log } = await setup();
+    monitor.start();
+    await vi.waitFor(() => {
+      expect(statuses.at(-1)?.monitoring).toBe('OPERATIONAL');
+    });
+    expect(monitor.runTest('warning')).toBe(false);
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining('skipped Test WARN'));
+    expect(statuses.at(-1)).toMatchObject({ active: false, warningActive: false, snapshot: { anomalies: [] } });
+  });
+
   it('continues publishing status when a sensor update throws', async () => {
     const { monitor, log, path } = await setup();
     monitor.onStatus(() => {
