@@ -36,6 +36,31 @@ describe('HealthMonitorPlatform', () => {
     expect(api.on).not.toHaveBeenCalled();
   });
 
+  it('clears cached alarms and rejects cached test switch requests when disabled', async () => {
+    const hap = await import('@homebridge/hap-nodejs');
+    const api = { ...makeApi(), hap } as API;
+    const platform = new HealthMonitorPlatform(makeLog(), { platform: 'HealthMonitor', errorThreshold: 0 }, api);
+    const sensor = new hap.Accessory('Cached warning sensor', hap.uuid.generate('warning-sensor'));
+    const contact = sensor.addService(hap.Service.ContactSensor);
+    contact.updateCharacteristic(hap.Characteristic.ContactSensorState, hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED);
+    contact.updateCharacteristic(hap.Characteristic.StatusActive, true);
+    contact.updateCharacteristic(hap.Characteristic.StatusFault, hap.Characteristic.StatusFault.GENERAL_FAULT);
+    const testSwitch = new hap.Accessory('Cached test switch', hap.uuid.generate('test-switch'));
+    const on = testSwitch.addService(hap.Service.Switch).getCharacteristic(hap.Characteristic.On);
+    on.updateValue(true);
+
+    platform.configureAccessory(Object.assign(sensor, { context: { role: 'health-warning-sensor' } }) as unknown as PlatformAccessory);
+    platform.configureAccessory(Object.assign(testSwitch, { context: { role: 'health-warning-test-switch' } }) as unknown as PlatformAccessory);
+
+    expect(contact.getCharacteristic(hap.Characteristic.ContactSensorState).value).toBe(hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
+    expect(contact.getCharacteristic(hap.Characteristic.StatusActive).value).toBe(false);
+    expect(contact.getCharacteristic(hap.Characteristic.StatusFault).value).toBe(hap.Characteristic.StatusFault.NO_FAULT);
+    expect(sensor.getService(hap.Service.LeakSensor)).toBeUndefined();
+    expect(on.value).toBe(false);
+    await expect(on.handleSetRequest(true)).rejects.toBe(hap.HAPStatus.NOT_ALLOWED_IN_CURRENT_STATE);
+    expect(on.value).toBe(false);
+  });
+
   it('logs and disables itself instead of throwing when the storage path cannot be resolved', () => {
     const log = makeLog();
     const api = {

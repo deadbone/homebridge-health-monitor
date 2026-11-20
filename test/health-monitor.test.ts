@@ -188,8 +188,11 @@ describe('HealthMonitor integration', () => {
     await vi.waitFor(() => { expect(statuses.at(-1)?.active).toBe(true); });
     await rename(path, `${path}.old`);
     await wait(220);
-    expect(statuses.at(-1)).toMatchObject({ active: true, monitoring: 'UNAVAILABLE' });
-    expect(statuses.at(-1)?.snapshot.plugins[0]?.severity).toBe('UNKNOWN');
+    await vi.waitFor(() => {
+      const status = statuses.at(-1);
+      expect(status).toMatchObject({ active: true, monitoring: 'UNAVAILABLE' });
+      expect(status?.snapshot.plugins[0]?.severity).toBe('UNKNOWN');
+    }, { interval: 10 });
     await rename(`${path}.old`, path);
     await vi.waitFor(() => { expect(statuses.at(-1)).toMatchObject({ active: false, monitoring: 'OPERATIONAL' }); });
   });

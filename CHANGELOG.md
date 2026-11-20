@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Test the restoration of cached HomeKit accessories when configuration is invalid and stabilize the log outage regression test.
+
 ## 0.3.0
 
 - Add optional **Test ERROR** and **Test WARN** switches in HomeKit. Each runs a simulation on demand using the configured sensor threshold and turns off automatically. Simulated events stay in memory.
