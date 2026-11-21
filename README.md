@@ -24,7 +24,7 @@ The plugin is intentionally small. It reads only the configured Homebridge log f
 ## Compatibility
 
 - Homebridge: `^1.6.0 || ^2.0.0`
-- Node.js: `>=22.12.0`
+- Node.js: `>=22.12.0`. Node.js 26 requires Homebridge 2.5.0 or later.
 
 This plugin does not require Homebridge UI. Homebridge UI is only used to render the configuration schema when it is installed.
 
@@ -263,7 +263,7 @@ Le plugin reste volontairement simple. Il lit uniquement le fichier de log Homeb
 ## Compatibilité
 
 - Homebridge : `^1.6.0 || ^2.0.0`
-- Node.js : `>=22.12.0`
+- Node.js : `>=22.12.0`. Node.js 26 nécessite Homebridge 2.5.0 ou une version ultérieure.
 
 Homebridge UI n'est pas obligatoire. Il sert seulement à afficher le schéma de configuration lorsqu'il est installé.
 
