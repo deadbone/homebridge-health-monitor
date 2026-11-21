@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2
+
+**English**
+
+- Validate the plugin on Node.js 26 with Homebridge 2.5.0.
+
+**Français**
+
+- Valider le plugin sous Node.js 26 avec Homebridge 2.5.0.
+
 ## 0.3.1
 
 - Test the restoration of cached HomeKit accessories when configuration is invalid and stabilize the log outage regression test.
